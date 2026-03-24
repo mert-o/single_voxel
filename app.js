@@ -218,25 +218,39 @@ function resetView() {
 
 function normalizeT1ToU8(t1f, mask) {
   const backgroundGray = 170;
-  let lo = Number.POSITIVE_INFINITY;
-  let hi = Number.NEGATIVE_INFINITY;
+  const values = [];
   for (let i = 0; i < t1f.length; i++) {
     if (!mask[i]) {
       continue;
     }
-    const v = t1f[i];
-    if (v < lo) {
-      lo = v;
-    }
-    if (v > hi) {
-      hi = v;
-    }
+    values.push(t1f[i]);
   }
+
   const out = new Uint8Array(t1f.length);
-  if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+  if (values.length === 0) {
     out.fill(backgroundGray);
     return out;
   }
+
+  values.sort((a, b) => a - b);
+  const idxLo = Math.floor((values.length - 1) * 0.01);
+  const idxHi = Math.ceil((values.length - 1) * 0.99);
+  let lo = values[idxLo];
+  let hi = values[idxHi];
+
+  // Degenerate percentile range fallback to full masked min/max.
+  if (!(hi > lo)) {
+    lo = values[0];
+    hi = values[values.length - 1];
+  }
+
+  if (!(hi > lo)) {
+    for (let i = 0; i < t1f.length; i++) {
+      out[i] = mask[i] ? 128 : backgroundGray;
+    }
+    return out;
+  }
+
   const den = hi - lo + 1e-8;
   for (let i = 0; i < t1f.length; i++) {
     if (!mask[i]) {
