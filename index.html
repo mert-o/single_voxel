@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Voxel Similarity Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <h1>Cross-Subject Voxel Similarity</h1>
+      <p>Click a voxel on any T1 panel. Similarity maps update across all subjects.</p>
+    </div>
+    <div class="controls">
+      <button id="resetBtn" type="button">Reset</button>
+      <label>
+        Overlay
+        <input id="alphaSlider" type="range" min="0" max="100" value="100" />
+      </label>
+      <output id="statusText">Loading demo data...</output>
+    </div>
+  </header>
+
+  <main>
+    <section class="grid" id="panelGrid"></section>
+    <aside class="notes">
+      <h2>How It Works</h2>
+      <ol>
+        <li>Each voxel stores a preprocessed feature vector.</li>
+        <li>Click picks a reference vector from the clicked subject.</li>
+        <li>Cosine similarity is computed to all valid voxels.</li>
+      </ol>
+      <p id="pickedText">No point selected.</p>
+    </aside>
+  </main>
+
+  <template id="panelTemplate">
+    <figure class="panel">
+      <canvas width="256" height="256"></canvas>
+      <figcaption></figcaption>
+    </figure>
+  </template>
+
+  <script src="./app.js" type="module"></script>
+</body>
+</html>
