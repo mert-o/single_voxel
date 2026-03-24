@@ -217,6 +217,7 @@ function resetView() {
 }
 
 function normalizeT1ToU8(t1f, mask) {
+  const backgroundGray = 170;
   let lo = Number.POSITIVE_INFINITY;
   let hi = Number.NEGATIVE_INFINITY;
   for (let i = 0; i < t1f.length; i++) {
@@ -232,8 +233,16 @@ function normalizeT1ToU8(t1f, mask) {
     }
   }
   const out = new Uint8Array(t1f.length);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+    out.fill(backgroundGray);
+    return out;
+  }
   const den = hi - lo + 1e-8;
   for (let i = 0; i < t1f.length; i++) {
+    if (!mask[i]) {
+      out[i] = backgroundGray;
+      continue;
+    }
     const x = (t1f[i] - lo) / den;
     out[i] = Math.max(0, Math.min(255, Math.round(x * 255)));
   }
