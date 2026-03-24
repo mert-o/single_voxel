@@ -101,12 +101,48 @@ main {
   box-shadow: 0 4px 18px #0000000f;
 }
 
+.slice-shell {
+  position: relative;
+  border-radius: 0.45rem;
+  overflow: hidden;
+  border: 1px solid #e8dcc8;
+}
+
 canvas {
   width: 100%;
   height: auto;
-  border-radius: 0.45rem;
-  border: 1px solid #e8dcc8;
+  display: block;
   image-rendering: pixelated;
+}
+
+.slice-loader {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #5c5244;
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  background:
+    linear-gradient(110deg, #f1e7d4 8%, #fbf3e6 18%, #f1e7d4 33%) 0 0 / 250% 100%,
+    #f1e7d4;
+  animation: sliceShimmer 1.35s linear infinite;
+  transition: opacity 220ms ease;
+}
+
+.panel:not(.is-loading) .slice-loader {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@keyframes sliceShimmer {
+  from {
+    background-position: 100% 0, 0 0;
+  }
+  to {
+    background-position: 0 0, 0 0;
+  }
 }
 
 figcaption {

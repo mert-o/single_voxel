@@ -40,7 +40,10 @@
 
   <template id="panelTemplate">
     <figure class="panel">
-      <canvas width="256" height="256"></canvas>
+      <div class="slice-shell">
+        <canvas width="256" height="256"></canvas>
+        <div class="slice-loader" aria-hidden="true">Loading slice...</div>
+      </div>
       <figcaption></figcaption>
     </figure>
   </template>

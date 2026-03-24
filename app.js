@@ -136,6 +136,25 @@ function buildPanels(subjects) {
   });
 }
 
+function showLoadingPanels(meta) {
+  panelGrid.innerHTML = "";
+  state.panels = [];
+
+  for (const [idx, s] of meta.subjects.entries()) {
+    const node = panelTemplate.content.firstElementChild.cloneNode(true);
+    const canvas = node.querySelector("canvas");
+    const caption = node.querySelector("figcaption");
+    node.classList.add("is-loading");
+
+    canvas.width = meta.width;
+    canvas.height = meta.height;
+    caption.textContent = `${s.name} (loading...)`;
+
+    panelGrid.appendChild(node);
+    state.panels.push({ canvas, caption, subject: null, idx });
+  }
+}
+
 function handlePick(ev, canvas, subjectIndex) {
   const subj = state.panels[subjectIndex].subject;
   const rect = canvas.getBoundingClientRect();
@@ -306,6 +325,9 @@ async function init() {
     state.height = meta.height;
     state.featureDim = meta.feature_dim;
     state.dataBaseDir = baseDir;
+
+    showLoadingPanels(meta);
+    statusText.textContent = "Loading slices...";
 
     const subjects = await loadSubjects(meta, baseDir);
     buildPanels(subjects);
