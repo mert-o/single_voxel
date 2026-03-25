@@ -164,6 +164,11 @@ figcaption {
   font-size: 1rem;
 }
 
+.notes h2 + .legend,
+.notes ol + h2 {
+  margin-top: 0.75rem;
+}
+
 .notes ol {
   margin: 0;
   padding-left: 1.1rem;
@@ -174,6 +179,39 @@ figcaption {
 #pickedText {
   margin-top: 0.7rem;
   font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+}
+
+.legend {
+  margin-top: 0.35rem;
+}
+
+.legend-bar {
+  width: 100%;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid #ccbfa9;
+  background: linear-gradient(
+    90deg,
+    rgb(68, 1, 84) 0%,
+    rgb(59, 82, 139) 25%,
+    rgb(33, 145, 140) 50%,
+    rgb(94, 201, 98) 75%,
+    rgb(253, 231, 37) 100%
+  );
+}
+
+.legend-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.25rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.75rem;
+  color: #5f5648;
+}
+
+.legend-note {
+  margin-top: 0.35rem;
   font-size: 0.82rem;
 }
 

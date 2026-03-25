@@ -14,8 +14,14 @@ let state = {
   width: 0,
   height: 0,
   featureDim: 0,
+  loadedFeatures: 0,
+  totalSubjects: 0,
   dataBaseDir: "./data",
 };
+
+function subjectLabel(index) {
+  return `Subject-${index + 1}`;
+}
 
 function clamp01(x) {
   return Math.max(0, Math.min(1, x));
@@ -58,12 +64,17 @@ function drawBaseT1(canvas, subj, marker = null) {
   ctx.putImageData(img, 0, 0);
 
   if (marker) {
-    ctx.strokeStyle = "#111";
-    ctx.fillStyle = "#ff3b1f";
-    ctx.lineWidth = 1.5;
+    // Draw a high-contrast ring marker that stays visible on grayscale and overlay colors.
+    ctx.strokeStyle = "#f7fafc";
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.arc(marker.x + 0.5, marker.y + 0.5, 4, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.arc(marker.x + 0.5, marker.y + 0.5, 5.2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = "#101112";
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.arc(marker.x + 0.5, marker.y + 0.5, 5.2, 0, Math.PI * 2);
     ctx.stroke();
   }
 }
@@ -124,7 +135,13 @@ function buildPanels(subjects) {
     canvas.width = subj.width;
     canvas.height = subj.height;
 
-    caption.textContent = subj.name;
+    caption.textContent = subj.featuresReady
+      ? subjectLabel(idx)
+      : `${subjectLabel(idx)} (features loading...)`;
+
+    if (!subj.featuresReady) {
+      node.classList.add("is-loading");
+    }
 
     drawBaseT1(canvas, subj, null);
 
@@ -132,7 +149,7 @@ function buildPanels(subjects) {
     canvas.addEventListener("click", (ev) => handlePick(ev, canvas, idx));
 
     panelGrid.appendChild(node);
-    state.panels.push({ canvas, caption, subject: subj, idx });
+    state.panels.push({ canvas, caption, subject: subj, idx, node });
   });
 }
 
@@ -148,15 +165,25 @@ function showLoadingPanels(meta) {
 
     canvas.width = meta.width;
     canvas.height = meta.height;
-    caption.textContent = `${s.name} (loading...)`;
+    caption.textContent = `${subjectLabel(idx)} (loading preview...)`;
 
     panelGrid.appendChild(node);
-    state.panels.push({ canvas, caption, subject: null, idx });
+    state.panels.push({ canvas, caption, subject: null, idx, node });
   }
 }
 
 function handlePick(ev, canvas, subjectIndex) {
   const subj = state.panels[subjectIndex].subject;
+  if (!subj || !subj.featuresReady) {
+    statusText.textContent = `Feature vectors still loading (${state.loadedFeatures}/${state.totalSubjects})`;
+    return;
+  }
+
+  if (state.loadedFeatures < state.totalSubjects) {
+    statusText.textContent = `Feature vectors still loading (${state.loadedFeatures}/${state.totalSubjects})`;
+    return;
+  }
+
   const rect = canvas.getBoundingClientRect();
   const px = Math.floor(((ev.clientX - rect.left) / rect.width) * subj.width);
   const py = Math.floor(((ev.clientY - rect.top) / rect.height) * subj.height);
@@ -193,12 +220,11 @@ function renderFromSelection(subjectIndex, px, py) {
   }
 
   state.selected = { subjectIndex, x: px, y: py };
-  pickedText.textContent = `Selected voxel: subj=${subjectIndex + 1}, x=${px}, y=${py}`;
+  pickedText.textContent = `Selected voxel: ${subjectLabel(subjectIndex)}, x=${px}, y=${py}`;
   statusText.textContent = "Computing cosine maps...";
 
   for (const panel of state.panels) {
-    const isPicked = panel.idx === subjectIndex;
-    drawBaseT1(panel.canvas, panel.subject, isPicked ? state.selected : null);
+    drawBaseT1(panel.canvas, panel.subject, state.selected);
     const sims = cosineAll(panel.subject, refVec);
     drawOverlay(panel.canvas, panel.subject, sims, state.alpha);
   }
@@ -341,19 +367,104 @@ async function loadSubjects(meta, baseDir) {
   return subjects;
 }
 
+async function loadSubjectsPreview(meta, baseDir) {
+  const width = meta.width;
+  const height = meta.height;
+  const k = meta.feature_dim;
+  const pixelCount = width * height;
+
+  const subjects = await Promise.all(
+    meta.subjects.map(async (s) => {
+      const t1Url = `${baseDir}/${s.t1_file}`;
+      const maskUrl = `${baseDir}/${s.mask_file}`;
+
+      const [t1f, mask] = await Promise.all([
+        loadArray(t1Url, Float32Array, pixelCount),
+        loadArray(maskUrl, Uint8Array, pixelCount),
+      ]);
+
+      const maskPixels = [];
+      for (let pix = 0; pix < pixelCount; pix++) {
+        if (mask[pix] > 0) {
+          maskPixels.push(pix);
+        }
+      }
+
+      return {
+        name: s.name,
+        width,
+        height,
+        k,
+        features: null,
+        t1f,
+        t1u8: normalizeT1ToU8(t1f, mask),
+        mask,
+        maskPixels: Uint32Array.from(maskPixels),
+        norms: null,
+        featuresReady: false,
+      };
+    })
+  );
+
+  return subjects;
+}
+
+async function loadFeaturesIntoSubjects(subjects, meta, baseDir) {
+  const pixelCount = meta.width * meta.height;
+  const k = meta.feature_dim;
+
+  state.loadedFeatures = 0;
+  state.totalSubjects = meta.subjects.length;
+
+  await Promise.all(
+    meta.subjects.map(async (s, idx) => {
+      const featUrl = `${baseDir}/${s.feature_file}`;
+      const features = await loadArray(featUrl, Float32Array, pixelCount * k);
+
+      const norms = new Float32Array(pixelCount);
+      for (let pix = 0; pix < pixelCount; pix++) {
+        let n2 = 0;
+        const base = pix * k;
+        for (let j = 0; j < k; j++) {
+          const v = features[base + j];
+          n2 += v * v;
+        }
+        norms[pix] = Math.sqrt(n2);
+      }
+
+      subjects[idx].features = features;
+      subjects[idx].norms = norms;
+      subjects[idx].featuresReady = true;
+      state.loadedFeatures += 1;
+
+      const panel = state.panels[idx];
+      if (panel) {
+        panel.caption.textContent = subjectLabel(idx);
+        panel.node.classList.remove("is-loading");
+      }
+
+      statusText.textContent = `Loading feature vectors (${state.loadedFeatures}/${state.totalSubjects})`;
+    })
+  );
+}
+
 async function init() {
   try {
     const { meta, baseDir } = await loadMetadata();
     state.width = meta.width;
     state.height = meta.height;
     state.featureDim = meta.feature_dim;
+    state.totalSubjects = meta.subjects.length;
     state.dataBaseDir = baseDir;
 
     showLoadingPanels(meta);
-    statusText.textContent = "Loading slices...";
+    statusText.textContent = "Loading coarse previews...";
 
-    const subjects = await loadSubjects(meta, baseDir);
+    const subjects = await loadSubjectsPreview(meta, baseDir);
     buildPanels(subjects);
+    statusText.textContent = "Preview ready. Loading feature vectors...";
+
+    await loadFeaturesIntoSubjects(subjects, meta, baseDir);
     statusText.textContent = "Click any subject panel";
   } catch (err) {
     statusText.textContent = "Failed to load data files";
