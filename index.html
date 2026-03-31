@@ -3,62 +3,143 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Voxel Similarity Demo</title>
+  <title>Cross Subject Single Voxel Homology</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <header class="hero">
-    <div>
-      <h1>Cross-Subject Voxel Similarity</h1>
-      <p>Click a voxel on any T1 panel. Similarity maps update across all subjects.</p>
-      <p>This is a single-slice, downscaled demo for fast interactive visualization.</p>
-    </div>
-    <div class="controls">
-      <button id="resetBtn" type="button">Reset</button>
-      <label>
-        Overlay
-        <input id="alphaSlider" type="range" min="0" max="100" value="100" />
-      </label>
-      <output id="statusText">Loading demo data...</output>
-    </div>
-  </header>
-
-  <main>
-    <section class="grid" id="panelGrid"></section>
-    <aside class="notes">
-      <h2>How It Works</h2>
-      <ol>
-        <li>Each voxel stores a preprocessed feature vector.</li>
-        <li>Click picks a reference vector from the clicked subject.</li>
-        <li>Cosine similarity is computed to all valid voxels.</li>
-      </ol>
-
-      <h2>Color Legend</h2>
-      <div class="legend" aria-label="Similarity color legend">
-        <div class="legend-bar" aria-hidden="true"></div>
-        <div class="legend-labels" aria-hidden="true">
-          <span>0.0</span>
-          <span>0.5</span>
-          <span>1.0</span>
-        </div>
-        <p class="legend-note">Viridis similarity overlay (blue low, yellow high). Circle marker shows selected voxel.</p>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Interactive Voxel Fingerprint Demo</p>
+        <h1>Cross Subject Single Voxel Homology</h1>
+        <p class="hero-lede">
+          Select one reference voxel, focus on a deep gray structure or lesion, and inspect
+          how its multi-contrast fingerprint maps across subjects.
+        </p>
       </div>
 
-      <p id="pickedText">No point selected.</p>
-    </aside>
-  </main>
+      <div class="hero-side">
+        <div class="dataset-tabs" id="datasetTabs"></div>
+        <div class="hero-stats">
+          <article class="stat-card">
+            <span class="stat-label">Feature Dims</span>
+            <strong id="featureCount">0</strong>
+          </article>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-layout">
+      <aside class="control-rail">
+        <section class="card">
+          <div class="card-head">
+            <h2>Image View</h2>
+            <p id="datasetDescription">Loading demo metadata...</p>
+          </div>
+
+          <div class="control-stack">
+            <label class="control-label" for="contrastSlider">Displayed Contrast</label>
+            <div class="contrast-row">
+              <button id="contrastPrevBtn" type="button" class="ghost-btn">Prev</button>
+              <input id="contrastSlider" type="range" min="0" max="0" value="0" />
+              <button id="contrastNextBtn" type="button" class="ghost-btn">Next</button>
+            </div>
+            <p class="detail-line" id="contrastLabel">T1 / MPRAGE · feature dim 343</p>
+          </div>
+
+          <div class="control-stack">
+            <label class="control-label slider-inline" for="zoomSlider">
+              Slice Zoom
+              <input id="zoomSlider" type="range" min="100" max="280" step="5" value="100" />
+            </label>
+            <p class="detail-line">Zoom: <span id="zoomValue">1.0x</span> · mouse wheel over a slice also works.</p>
+          </div>
+
+          <div class="control-stack">
+            <label class="control-label slider-inline" for="alphaSlider">
+              Homology Overlay
+              <input id="alphaSlider" type="range" min="0" max="100" value="86" />
+            </label>
+            <output id="statusText">Loading demo data...</output>
+          </div>
+
+          <button id="resetBtn" type="button" class="primary-btn wide-btn">Clear Reference</button>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Anatomical Focus</h2>
+            <p>Restrict the homology map and zoom to a selected structure or lesion.</p>
+          </div>
+          <div class="chip-group" id="regionControls"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Contrast Families</h2>
+            <p>Choose which MRI contrast families contribute to the voxel homology score.</p>
+          </div>
+          <div class="chip-group" id="similarityControls"></div>
+          <p class="detail-line" id="activeFamiliesText"></p>
+        </section>
+
+        <section class="card metric-card">
+          <div class="card-head">
+            <h2>Homology Metric</h2>
+            <p>Cosine similarity between the selected reference fingerprint and each candidate voxel.</p>
+          </div>
+
+          <p class="formula">score = cos(v<sub>ref</sub>, v<sub>voxel</sub>)</p>
+          <p class="metric-copy">
+            Each voxel is represented by a multi-contrast feature vector. Brighter overlays indicate a closer match to the selected
+            reference voxel after dataset-specific preprocessing; when an anatomical focus is active, only that anatomy contributes.
+          </p>
+
+          <div class="legend" aria-label="Similarity color legend">
+            <div class="legend-bar" aria-hidden="true"></div>
+            <div class="legend-labels" aria-hidden="true">
+              <span>0.0</span>
+              <span>0.5</span>
+              <span>1.0</span>
+            </div>
+          </div>
+
+          <p id="pickedText">No reference voxel selected. Click a slice to project voxel homology across subjects.</p>
+        </section>
+      </aside>
+
+      <section class="viewer">
+        <div class="viewer-toolbar">
+          <div>
+            <p class="viewer-kicker">Cross-Subject Homology</p>
+            <h2>Voxel Homology Maps</h2>
+          </div>
+          <p id="selectionSummary"></p>
+        </div>
+
+        <section class="grid" id="panelGrid"></section>
+      </section>
+    </main>
+  </div>
 
   <template id="panelTemplate">
-    <figure class="panel">
+    <article class="panel is-loading">
+      <div class="panel-topline">
+        <div>
+          <h3 class="panel-title"></h3>
+          <p class="panel-meta"></p>
+        </div>
+        <div class="panel-badge"></div>
+      </div>
+
       <div class="slice-shell">
         <canvas width="256" height="256"></canvas>
         <div class="slice-loader" aria-hidden="true">Loading slice...</div>
       </div>
-      <figcaption></figcaption>
-    </figure>
+    </article>
   </template>
 
   <script src="./app.js" type="module"></script>
