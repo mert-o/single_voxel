@@ -68,24 +68,6 @@
 
           <button id="resetBtn" type="button" class="primary-btn wide-btn">Clear Reference</button>
         </section>
-
-        <section class="card">
-          <div class="card-head">
-            <h2>Anatomical Focus</h2>
-            <p>Restrict the homology map and zoom to a selected structure or lesion.</p>
-          </div>
-          <div class="chip-group" id="regionControls"></div>
-        </section>
-
-        <section class="card">
-          <div class="card-head">
-            <h2>Contrast Families</h2>
-            <p>Choose which MRI contrast families contribute to the voxel homology score.</p>
-          </div>
-          <div class="chip-group" id="similarityControls"></div>
-          <p class="detail-line" id="activeFamiliesText"></p>
-        </section>
-
       </aside>
 
       <section class="viewer">
@@ -97,6 +79,25 @@
                 <h2>Voxel Homology Maps</h2>
               </div>
               <p id="selectionSummary"></p>
+            </div>
+
+            <div class="viewer-controls">
+              <section class="control-strip-card">
+                <div class="control-strip-head">
+                  <h3>Anatomical Focus</h3>
+                  <p>Restrict the homology map and zoom to a selected structure or lesion.</p>
+                </div>
+                <div class="chip-group chip-group-horizontal" id="regionControls"></div>
+              </section>
+
+              <section class="control-strip-card">
+                <div class="control-strip-head">
+                  <h3>Contrast Families</h3>
+                  <p>Choose which MRI contrast families contribute to the voxel homology score.</p>
+                </div>
+                <div class="chip-group chip-group-horizontal" id="similarityControls"></div>
+                <p class="detail-line" id="activeFamiliesText"></p>
+              </section>
             </div>
 
             <section class="grid" id="panelGrid"></section>

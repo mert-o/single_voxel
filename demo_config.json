@@ -53,7 +53,7 @@
           "name": "Ctrl-1",
           "vol4d": "/home/m/HDD/nl_subjects/YHC_10_lncguay/new_data_original_space_poly2_residuals.nii.gz",
           "mask": "/home/m/HDD/nl_subjects/YHC_10_lncguay/mask.nii.gz",
-          "slice": 247,
+          "slice": 255,
           "t1_channel": 343,
           "rotate_k": 1,
           "region_sources": {
@@ -64,7 +64,7 @@
           "name": "Ctrl-2",
           "vol4d": "/home/m/HDD2/vox2/coregs/YHC_03_cyumllh_MS4D_POLY_in_ref.nii.gz",
           "mask": "/home/m/HDD2/vox2/coregs/YHC_03_cyumllh_mask_in_ref.nii.gz",
-          "slice": 247,
+          "slice": 259,
           "t1_channel": 343,
           "rotate_k": 1,
           "region_sources": {
@@ -75,7 +75,7 @@
           "name": "Ctrl-3",
           "vol4d": "/home/m/HDD2/vox2/coregs/OHC_17_mmixjcu_MS4D_POLY_in_ref.nii.gz",
           "mask": "/home/m/HDD2/vox2/coregs/OHC_17_mmixjcu_mask_in_ref.nii.gz",
-          "slice": 247,
+          "slice": 253,
           "t1_channel": 343,
           "rotate_k": 1,
           "region_sources": {
