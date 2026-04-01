@@ -20,6 +20,8 @@ const contrastNextBtn = document.getElementById("contrastNextBtn");
 const featureCount = document.getElementById("featureCount");
 const activeFamiliesText = document.getElementById("activeFamiliesText");
 const selectionSummary = document.getElementById("selectionSummary");
+const preprocessingText = document.getElementById("preprocessingText");
+const deliveryText = document.getElementById("deliveryText");
 
 const state = {
   meta: null,
@@ -154,6 +156,54 @@ function normalizeGroupList(groups, fallbackFeatureDim) {
   }));
 }
 
+function normalizeDtypes(dtypeConfig = {}) {
+  return {
+    feature: String(dtypeConfig.feature ?? "float32").toLowerCase(),
+    t1: String(dtypeConfig.t1 ?? "float32").toLowerCase(),
+    mask: String(dtypeConfig.mask ?? "uint8").toLowerCase(),
+    region: String(dtypeConfig.region ?? "uint8").toLowerCase(),
+  };
+}
+
+function float16ToFloat32(value) {
+  const sign = value & 0x8000 ? -1 : 1;
+  const exponent = (value >> 10) & 0x1f;
+  const fraction = value & 0x03ff;
+
+  if (exponent === 0) {
+    if (fraction === 0) {
+      return sign * 0;
+    }
+    return sign * Math.pow(2, -14) * (fraction / 1024);
+  }
+
+  if (exponent === 0x1f) {
+    return fraction ? Number.NaN : sign * Number.POSITIVE_INFINITY;
+  }
+
+  return sign * Math.pow(2, exponent - 15) * (1 + fraction / 1024);
+}
+
+const FLOAT16_LUT = (() => {
+  const table = new Float32Array(65536);
+  for (let i = 0; i < table.length; i++) {
+    table[i] = float16ToFloat32(i);
+  }
+  return table;
+})();
+
+function decodeFloat16Buffer(buffer, expectedLength, url) {
+  const arr = new Uint16Array(buffer);
+  if (arr.length !== expectedLength) {
+    throw new Error(`Unexpected length for ${url}: got ${arr.length}, expected ${expectedLength}`);
+  }
+  const out = new Float32Array(expectedLength);
+  for (let i = 0; i < arr.length; i++) {
+    out[i] = FLOAT16_LUT[arr[i]];
+  }
+  return out;
+}
+
 function wrapLegacyMetadata(meta) {
   return {
     version: 1,
@@ -242,7 +292,10 @@ function normalizeMetadata(rawMeta) {
       width: Number(dataset.width),
       height: Number(dataset.height),
       featureDim,
+      dtype: normalizeDtypes(dataset.dtype),
       t1Label: String(dataset.t1_label ?? dataset.t1Label ?? "T1 structural"),
+      preprocessingSummary: String(dataset.preprocessing_summary ?? dataset.preprocessingSummary ?? ""),
+      deliverySummary: String(dataset.delivery_summary ?? dataset.deliverySummary ?? ""),
       displayT1AtFeature: Number.isFinite(dataset.display_t1_at_feature ?? dataset.displayT1AtFeature)
         ? Number(dataset.display_t1_at_feature ?? dataset.displayT1AtFeature)
         : null,
@@ -317,17 +370,30 @@ function buildMaskInfo(mask, width, height) {
   };
 }
 
-async function loadArray(url, ctor, expectedLength) {
+async function loadTypedArray(url, dtype, expectedLength) {
   const res = await fetch(url, FETCH_OPTIONS);
   if (!res.ok) {
     throw new Error(`Could not fetch ${url}`);
   }
   const buf = await res.arrayBuffer();
-  const arr = new ctor(buf);
-  if (arr.length !== expectedLength) {
-    throw new Error(`Unexpected length for ${url}: got ${arr.length}, expected ${expectedLength}`);
+  if (dtype === "float32") {
+    const arr = new Float32Array(buf);
+    if (arr.length !== expectedLength) {
+      throw new Error(`Unexpected length for ${url}: got ${arr.length}, expected ${expectedLength}`);
+    }
+    return arr;
   }
-  return arr;
+  if (dtype === "float16") {
+    return decodeFloat16Buffer(buf, expectedLength, url);
+  }
+  if (dtype === "uint8") {
+    const arr = new Uint8Array(buf);
+    if (arr.length !== expectedLength) {
+      throw new Error(`Unexpected length for ${url}: got ${arr.length}, expected ${expectedLength}`);
+    }
+    return arr;
+  }
+  throw new Error(`Unsupported dtype '${dtype}' for ${url}`);
 }
 
 async function loadMetadata() {
@@ -351,12 +417,12 @@ async function loadSubjectPreview(datasetMeta, subjectMeta, baseDir) {
   const regionEntries = Object.entries(subjectMeta.region_files ?? {});
   const regionPromises = regionEntries.map(async ([regionId, filename]) => [
     regionId,
-    await loadArray(`${baseDir}/${filename}`, Uint8Array, pixelCount),
+    await loadTypedArray(`${baseDir}/${filename}`, datasetMeta.dtype.region, pixelCount),
   ]);
 
   const [t1f, mask, ...regionPairs] = await Promise.all([
-    loadArray(`${baseDir}/${subjectMeta.t1_file}`, Float32Array, pixelCount),
-    loadArray(`${baseDir}/${subjectMeta.mask_file}`, Uint8Array, pixelCount),
+    loadTypedArray(`${baseDir}/${subjectMeta.t1_file}`, datasetMeta.dtype.t1, pixelCount),
+    loadTypedArray(`${baseDir}/${subjectMeta.mask_file}`, datasetMeta.dtype.mask, pixelCount),
     ...regionPromises,
   ]);
 
@@ -661,11 +727,11 @@ function featureProgressText(dataset) {
 }
 
 function loadingStatusText(dataset, prefix = "Loading feature data") {
-  return `${prefix} (${featureProgressText(dataset)}). Homology unlocks when complete.`;
+  return `${prefix} ${featureProgressText(dataset)}. Homology unlocks after load.`;
 }
 
 function previewReadyStatusText(dataset) {
-  return `Preview ready. Loading feature data (${featureProgressText(dataset)}).`;
+  return `Preview ready. Loading features ${featureProgressText(dataset)}.`;
 }
 
 function ensureSimilarityCache() {
@@ -803,13 +869,13 @@ function renderPanel(panel, similarityEntry) {
   panel.meta.textContent = `Axial slice z=${subject.slice}`;
 
   if (!subject.featuresReady) {
-    panel.badge.textContent = `Loading features ${featureProgressText(dataset)}`;
+    panel.badge.textContent = `Loading ${featureProgressText(dataset)}`;
   } else if (displayOption.kind === "feature" && !subject.displayCache.has(`f${displayOption.index}`)) {
-    panel.badge.textContent = "Preparing contrast";
+    panel.badge.textContent = "Preparing";
   } else if (isReference && similarityEntry?.stats) {
-    panel.badge.textContent = `Reference · mean ${similarityEntry.stats.mean.toFixed(2)}`;
+    panel.badge.textContent = `Ref · ${similarityEntry.stats.mean.toFixed(2)}`;
   } else if (isReference) {
-    panel.badge.textContent = "Reference";
+    panel.badge.textContent = "Ref";
   } else if (isRegionMode && !focusInfo.pixels.length) {
     panel.badge.textContent = "No target";
   } else if (similarityEntry?.stats) {
@@ -997,11 +1063,13 @@ function updateSelectionSummary() {
   const parts = [
     dataset.meta.name,
     getRegionLabel(dataset, state.activeRegionId),
-    `${state.activeSimilarityGroups.size}/${dataset.meta.similarityGroups.length} contrast families active`,
-    `features ${featureProgressText(dataset)}`,
+    `${state.activeSimilarityGroups.size}/${dataset.meta.similarityGroups.length} families`,
   ];
+  if (dataset.featuresReadyCount < dataset.featuresTotal) {
+    parts.push(`Loading ${featureProgressText(dataset)}`);
+  }
   if (state.selected && state.selected.datasetId === state.datasetId) {
-    parts.push(`Reference voxel: ${subjectLabel(state.selected.subjectIndex)}`);
+    parts.push(`Ref: ${subjectLabel(state.selected.subjectIndex)}`);
   }
   selectionSummary.textContent = parts.join(" · ");
 }
@@ -1015,14 +1083,14 @@ function updateStats() {
   featureCount.textContent = String(dataset.meta.featureDim);
   datasetDescription.textContent =
     dataset.featuresReadyCount < dataset.featuresTotal
-      ? `${dataset.meta.description} Feature vectors are still loading in the background (${featureProgressText(
-          dataset
-        )}).`
+      ? `${dataset.meta.description} Web-ready feature tensors loading ${featureProgressText(dataset)}.`
       : dataset.meta.description;
   activeFamiliesText.textContent = `${state.activeSimilarityGroups.size} of ${
     dataset.meta.similarityGroups.length
   } contrast families active.`;
   contrastLabel.textContent = getDisplayOption(dataset.meta).label;
+  preprocessingText.textContent = dataset.meta.preprocessingSummary;
+  deliveryText.textContent = dataset.meta.deliverySummary;
 }
 
 function renderRegionControls() {
@@ -1159,7 +1227,7 @@ async function loadFeaturesIntoSubject(dataset, idx, baseDir) {
   const subject = dataset.subjects[idx];
   const subjectMeta = dataset.meta.subjects[idx];
   const featureLength = subject.pixelCount * dataset.meta.featureDim;
-  const features = await loadArray(`${baseDir}/${subjectMeta.feature_file}`, Float32Array, featureLength);
+  const features = await loadTypedArray(`${baseDir}/${subjectMeta.feature_file}`, dataset.meta.dtype.feature, featureLength);
   const norms = new Float32Array(subject.pixelCount);
 
   for (let flat = 0; flat < subject.pixelCount; flat++) {

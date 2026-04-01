@@ -285,15 +285,19 @@ input[type="range"] {
 }
 
 output {
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  align-items: flex-start;
   min-height: 38px;
+  width: 100%;
   padding: 8px 11px;
   border-radius: 14px;
   border: 1px solid rgba(72, 215, 193, 0.28);
   background: rgba(72, 215, 193, 0.1);
   color: #c8fff5;
   font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .chip-group {
@@ -388,6 +392,12 @@ output {
   font-size: 0.83rem;
   line-height: 1.55;
   color: rgba(233, 242, 247, 0.86);
+  overflow-wrap: anywhere;
+}
+
+.metric-detail {
+  margin-top: 12px;
+  line-height: 1.55;
 }
 
 .viewer {
@@ -395,9 +405,9 @@ output {
 }
 
 .viewer-toolbar {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 34ch);
+  align-items: start;
   gap: 14px;
   margin-bottom: 18px;
 }
@@ -412,11 +422,14 @@ output {
 
 #selectionSummary {
   margin: 0;
-  max-width: 54ch;
+  max-width: none;
+  width: min(100%, 34ch);
+  justify-self: end;
   text-align: right;
   color: rgba(220, 236, 245, 0.7);
   font-size: 0.8rem;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .grid {
@@ -446,11 +459,15 @@ output {
 }
 
 .panel-topline {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.panel-topline > :first-child {
+  min-width: 0;
 }
 
 .panel-title {
@@ -472,7 +489,10 @@ output {
   color: rgba(233, 242, 248, 0.86);
   font-size: 0.78rem;
   font-weight: 600;
-  white-space: nowrap;
+  max-width: 9rem;
+  text-align: right;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .slice-shell {
@@ -568,11 +588,12 @@ canvas {
   }
 
   .viewer-toolbar {
-    flex-direction: column;
-    align-items: start;
+    grid-template-columns: 1fr;
   }
 
   #selectionSummary {
+    width: 100%;
+    justify-self: start;
     text-align: left;
   }
 

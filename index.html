@@ -93,10 +93,12 @@
           </div>
 
           <p class="formula">score = cos(v<sub>ref</sub>, v<sub>voxel</sub>)</p>
-          <p class="metric-copy">
+          <p class="metric-copy" id="metricCopy">
             Each voxel is represented by a multi-contrast feature vector. Brighter overlays indicate a closer match to the selected
             reference voxel after dataset-specific preprocessing; when an anatomical focus is active, only that anatomy contributes.
           </p>
+          <p class="detail-line metric-detail" id="preprocessingText"></p>
+          <p class="detail-line metric-detail" id="deliveryText"></p>
 
           <div class="legend" aria-label="Similarity color legend">
             <div class="legend-bar" aria-hidden="true"></div>

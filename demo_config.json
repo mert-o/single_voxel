@@ -1,15 +1,18 @@
 {
   "default_dataset_id": "healthy",
-  "target_size": [256, 256],
+  "target_size": [176, 176],
   "preserve_aspect": true,
   "scale_mode": "standard",
   "use_block_weights": true,
   "l2_normalize": true,
+  "feature_dtype": "float16",
+  "delivery_summary": "Web demo delivery: single-slice exports are downsampled to a 176 px maximum side and feature tensors are stored as float16 for faster loading; homology is computed on these web-ready tensors.",
   "datasets": [
     {
       "id": "healthy",
       "name": "Healthy Reference Cohort",
       "description": "Four 7T controls in shared reference space with multimodal voxel fingerprints.",
+      "preprocessing_summary": "Healthy preprocessing: shared reference-space voxel features with per-subject standard scaling across voxels, contrast-family block weighting, and voxel-wise L2 normalization.",
       "t1_label": "T1 / MPRAGE · feature dim 343",
       "display_t1_at_feature": 343,
       "default_display": {
@@ -82,9 +85,9 @@
           "name": "Ctrl-4",
           "vol4d": "/home/m/HDD2/vox2/coregs/OHC_11_fxdvnzc_MS4D_POLY_in_ref.nii.gz",
           "mask": "/home/m/HDD2/vox2/coregs/OHC_11_fxdvnzc_mask_in_ref.nii.gz",
+          "t1_path": "/home/m/HDD2/vox2/coregs/OHC_11_fxdvnzc_T1_in_ref.nii.gz",
           "slice": 247,
-          "t1_channel": 343,
-          "rotate_k": 0,
+          "rotate_k": 1,
           "region_sources": {
             "aseg": "/home/m/HDD2/vox2/coregs/OHC_11_fxdvnzc_aseg_in_ref.nii.gz"
           }
@@ -95,6 +98,7 @@
       "id": "tumor",
       "name": "Tumor CEST Cases",
       "description": "Four tumor cases in reference space with smoothed, standardized CEST-normalized voxel fingerprints.",
+      "preprocessing_summary": "Tumor preprocessing: coregistered CEST-normalized volumes in reference space, in-plane Gaussian smoothing (sigma = 1.0), per-subject standard scaling, and cosine similarity without block weighting or voxel-wise L2 normalization.",
       "t1_label": "T1 structural",
       "default_display": {
         "kind": "t1"
