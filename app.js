@@ -20,7 +20,8 @@ const contrastNextBtn = document.getElementById("contrastNextBtn");
 const featureCount = document.getElementById("featureCount");
 const activeFamiliesText = document.getElementById("activeFamiliesText");
 const selectionSummary = document.getElementById("selectionSummary");
-const preprocessingText = document.getElementById("preprocessingText");
+const healthyPrepText = document.getElementById("healthyPrepText");
+const tumorPrepText = document.getElementById("tumorPrepText");
 const deliveryText = document.getElementById("deliveryText");
 
 const state = {
@@ -727,11 +728,11 @@ function featureProgressText(dataset) {
 }
 
 function loadingStatusText(dataset, prefix = "Loading feature data") {
-  return `${prefix} ${featureProgressText(dataset)}. Homology unlocks after load.`;
+  return `${prefix} ${featureProgressText(dataset)}. Pick after load.`;
 }
 
 function previewReadyStatusText(dataset) {
-  return `Preview ready. Loading features ${featureProgressText(dataset)}.`;
+  return `Preview ready. Features ${featureProgressText(dataset)}.`;
 }
 
 function ensureSimilarityCache() {
@@ -1076,9 +1077,17 @@ function updateSelectionSummary() {
 
 function updateStats() {
   const dataset = getActiveDataset();
-  if (!dataset) {
+  if (!dataset || !state.meta) {
     return;
   }
+
+  const healthyMeta = state.meta.datasets.find((item) => item.id === "healthy") ?? null;
+  const tumorMeta = state.meta.datasets.find((item) => item.id === "tumor") ?? null;
+  const deliverySummary =
+    dataset.meta.deliverySummary ||
+    healthyMeta?.deliverySummary ||
+    tumorMeta?.deliverySummary ||
+    "";
 
   featureCount.textContent = String(dataset.meta.featureDim);
   datasetDescription.textContent =
@@ -1089,8 +1098,12 @@ function updateStats() {
     dataset.meta.similarityGroups.length
   } contrast families active.`;
   contrastLabel.textContent = getDisplayOption(dataset.meta).label;
-  preprocessingText.textContent = dataset.meta.preprocessingSummary;
-  deliveryText.textContent = dataset.meta.deliverySummary;
+  healthyPrepText.textContent = healthyMeta?.preprocessingSummary ?? "";
+  healthyPrepText.hidden = !healthyMeta?.preprocessingSummary;
+  tumorPrepText.textContent = tumorMeta?.preprocessingSummary ?? "";
+  tumorPrepText.hidden = !tumorMeta?.preprocessingSummary;
+  deliveryText.textContent = deliverySummary;
+  deliveryText.hidden = !deliverySummary;
 }
 
 function renderRegionControls() {

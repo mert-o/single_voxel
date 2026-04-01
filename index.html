@@ -86,43 +86,58 @@
           <p class="detail-line" id="activeFamiliesText"></p>
         </section>
 
-        <section class="card metric-card">
-          <div class="card-head">
-            <h2>Homology Metric</h2>
-            <p>Cosine similarity between the selected reference fingerprint and each candidate voxel.</p>
-          </div>
-
-          <p class="formula">score = cos(v<sub>ref</sub>, v<sub>voxel</sub>)</p>
-          <p class="metric-copy" id="metricCopy">
-            Each voxel is represented by a multi-contrast feature vector. Brighter overlays indicate a closer match to the selected
-            reference voxel after dataset-specific preprocessing; when an anatomical focus is active, only that anatomy contributes.
-          </p>
-          <p class="detail-line metric-detail" id="preprocessingText"></p>
-          <p class="detail-line metric-detail" id="deliveryText"></p>
-
-          <div class="legend" aria-label="Similarity color legend">
-            <div class="legend-bar" aria-hidden="true"></div>
-            <div class="legend-labels" aria-hidden="true">
-              <span>0.0</span>
-              <span>0.5</span>
-              <span>1.0</span>
-            </div>
-          </div>
-
-          <p id="pickedText">No reference voxel selected. Click a slice to project voxel homology across subjects.</p>
-        </section>
       </aside>
 
       <section class="viewer">
-        <div class="viewer-toolbar">
-          <div>
-            <p class="viewer-kicker">Cross-Subject Homology</p>
-            <h2>Voxel Homology Maps</h2>
-          </div>
-          <p id="selectionSummary"></p>
-        </div>
+        <div class="viewer-shell">
+          <div class="viewer-main">
+            <div class="viewer-toolbar">
+              <div>
+                <p class="viewer-kicker">Cross-Subject Homology</p>
+                <h2>Voxel Homology Maps</h2>
+              </div>
+              <p id="selectionSummary"></p>
+            </div>
 
-        <section class="grid" id="panelGrid"></section>
+            <section class="grid" id="panelGrid"></section>
+          </div>
+
+          <aside class="viewer-side">
+            <section class="side-card score-card">
+              <div class="card-head">
+                <h2>Homology Score</h2>
+                <p>Cosine similarity between the selected reference fingerprint and each candidate voxel.</p>
+              </div>
+
+              <p class="formula">score = cos(v<sub>ref</sub>, v<sub>voxel</sub>)</p>
+              <p class="metric-copy" id="metricCopy">
+                Brighter overlays indicate a closer match to the chosen reference voxel. When an anatomical focus is active,
+                similarity is restricted to that anatomy only.
+              </p>
+
+              <div class="legend-vertical-wrap" aria-label="Similarity color legend">
+                <div class="legend-vertical-labels" aria-hidden="true">
+                  <span>1.0</span>
+                  <span>0.5</span>
+                  <span>0.0</span>
+                </div>
+                <div class="legend-vertical-bar" aria-hidden="true"></div>
+              </div>
+
+              <p id="pickedText">No reference voxel selected. Click a slice to project voxel homology across subjects.</p>
+            </section>
+
+            <section class="side-card preprocessing-card">
+              <div class="card-head">
+                <h2>Preprocessing</h2>
+                <p>Dataset-specific preparation used before cross-subject homology is evaluated.</p>
+              </div>
+              <p class="prep-copy" id="healthyPrepText"></p>
+              <p class="prep-copy" id="tumorPrepText"></p>
+              <p class="prep-copy" id="deliveryText"></p>
+            </section>
+          </aside>
+        </div>
       </section>
     </main>
   </div>
