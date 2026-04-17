@@ -1,5 +1,7 @@
 const META_PATHS = ["./data/metadata.json", "./metadata.json"];
 const FETCH_OPTIONS = { cache: "no-store" };
+const LOCAL_THREE_MODULE = "./vendor/three.module.js";
+const LOCAL_ORBIT_CONTROLS = "./vendor/OrbitControls.js";
 
 const datasetTabs = document.getElementById("datasetTabs");
 const datasetDescription = document.getElementById("datasetDescription");
@@ -17,6 +19,11 @@ const contrastSlider = document.getElementById("contrastSlider");
 const contrastLabel = document.getElementById("contrastLabel");
 const contrastPrevBtn = document.getElementById("contrastPrevBtn");
 const contrastNextBtn = document.getElementById("contrastNextBtn");
+const contrastControlStack = document.getElementById("contrastControlStack");
+const zoomControlStack = document.getElementById("zoomControlStack");
+const interactionHint = document.getElementById("interactionHint");
+const regionStripCard = document.getElementById("regionStripCard");
+const similarityStripCard = document.getElementById("similarityStripCard");
 const featureCount = document.getElementById("featureCount");
 const activeFamiliesText = document.getElementById("activeFamiliesText");
 const selectionSummary = document.getElementById("selectionSummary");
@@ -37,7 +44,12 @@ const state = {
   displayIndex: 0,
   selected: null,
   similarityCache: null,
+  dragPicking: null,
+  meshLib: null,
 };
+
+let layoutSyncFrame = 0;
+let globalRenderTick = 0;
 
 function clamp(value, lo, hi) {
   return Math.max(lo, Math.min(hi, value));
@@ -45,6 +57,39 @@ function clamp(value, lo, hi) {
 
 function clamp01(x) {
   return clamp(x, 0, 1);
+}
+
+function dirnameUrl(url) {
+  const trimmed = String(url ?? "").replace(/\/+$/, "");
+  const idx = trimmed.lastIndexOf("/");
+  return idx >= 0 ? trimmed.slice(0, idx) || "." : ".";
+}
+
+function joinUrl(base, path) {
+  const rel = String(path ?? "");
+  if (!rel) {
+    return String(base ?? ".");
+  }
+  if (/^(?:[a-z]+:)?\/\//i.test(rel) || rel.startsWith("/")) {
+    return rel;
+  }
+  const root = String(base ?? ".").replace(/\/+$/, "");
+  return `${root || "."}/${rel.replace(/^\.?\//, "")}`;
+}
+
+function buildInflatedDisplayCoords(coords, hemi) {
+  const out = new Float32Array(coords.length);
+  const flip = hemi === "lh" ? -1 : 1;
+  const depthFlip = hemi === "lh" ? 1 : -1;
+  for (let i = 0; i < coords.length; i += 3) {
+    const x = coords[i + 0];
+    const y = coords[i + 1];
+    const z = coords[i + 2];
+    out[i + 0] = flip * y;
+    out[i + 1] = z;
+    out[i + 2] = depthFlip * x;
+  }
+  return out;
 }
 
 function subjectLabel(index) {
@@ -163,6 +208,11 @@ function normalizeDtypes(dtypeConfig = {}) {
     t1: String(dtypeConfig.t1 ?? "float32").toLowerCase(),
     mask: String(dtypeConfig.mask ?? "uint8").toLowerCase(),
     region: String(dtypeConfig.region ?? "uint8").toLowerCase(),
+    coords: String(dtypeConfig.coords ?? "float32").toLowerCase(),
+    faces: String(dtypeConfig.faces ?? "uint32").toLowerCase(),
+    color: String(dtypeConfig.color ?? "uint8").toLowerCase(),
+    label: String(dtypeConfig.label ?? "uint8").toLowerCase(),
+    index: String(dtypeConfig.index ?? "uint16").toLowerCase(),
   };
 }
 
@@ -241,6 +291,10 @@ function formatFeatureLabel(featureGroups, index) {
 }
 
 function buildDisplayOptions(datasetMeta) {
+  if (datasetMeta.viewerKind === "mesh") {
+    return [{ id: "mesh", kind: "mesh", label: "Inflated cortical surface" }];
+  }
+
   const options = [];
   const anchorIndex =
     Number.isInteger(datasetMeta.displayT1AtFeature) &&
@@ -293,10 +347,13 @@ function normalizeMetadata(rawMeta) {
       width: Number(dataset.width),
       height: Number(dataset.height),
       featureDim,
+      viewerKind: String(dataset.viewer_kind ?? dataset.viewerKind ?? "slice"),
       dtype: normalizeDtypes(dataset.dtype),
       t1Label: String(dataset.t1_label ?? dataset.t1Label ?? "T1 structural"),
       preprocessingSummary: String(dataset.preprocessing_summary ?? dataset.preprocessingSummary ?? ""),
       deliverySummary: String(dataset.delivery_summary ?? dataset.deliverySummary ?? ""),
+      interactionHint: String(dataset.interaction_hint ?? dataset.interactionHint ?? ""),
+      parcelNames: dataset.parcel_names ?? dataset.parcelNames ?? null,
       displayT1AtFeature: Number.isFinite(dataset.display_t1_at_feature ?? dataset.displayT1AtFeature)
         ? Number(dataset.display_t1_at_feature ?? dataset.displayT1AtFeature)
         : null,
@@ -394,6 +451,20 @@ async function loadTypedArray(url, dtype, expectedLength) {
     }
     return arr;
   }
+  if (dtype === "uint16") {
+    const arr = new Uint16Array(buf);
+    if (arr.length !== expectedLength) {
+      throw new Error(`Unexpected length for ${url}: got ${arr.length}, expected ${expectedLength}`);
+    }
+    return arr;
+  }
+  if (dtype === "uint32") {
+    const arr = new Uint32Array(buf);
+    if (arr.length !== expectedLength) {
+      throw new Error(`Unexpected length for ${url}: got ${arr.length}, expected ${expectedLength}`);
+    }
+    return arr;
+  }
   throw new Error(`Unsupported dtype '${dtype}' for ${url}`);
 }
 
@@ -418,12 +489,12 @@ async function loadSubjectPreview(datasetMeta, subjectMeta, baseDir) {
   const regionEntries = Object.entries(subjectMeta.region_files ?? {});
   const regionPromises = regionEntries.map(async ([regionId, filename]) => [
     regionId,
-    await loadTypedArray(`${baseDir}/${filename}`, datasetMeta.dtype.region, pixelCount),
+    await loadTypedArray(joinUrl(baseDir, filename), datasetMeta.dtype.region, pixelCount),
   ]);
 
   const [t1f, mask, ...regionPairs] = await Promise.all([
-    loadTypedArray(`${baseDir}/${subjectMeta.t1_file}`, datasetMeta.dtype.t1, pixelCount),
-    loadTypedArray(`${baseDir}/${subjectMeta.mask_file}`, datasetMeta.dtype.mask, pixelCount),
+    loadTypedArray(joinUrl(baseDir, subjectMeta.t1_file), datasetMeta.dtype.t1, pixelCount),
+    loadTypedArray(joinUrl(baseDir, subjectMeta.mask_file), datasetMeta.dtype.mask, pixelCount),
     ...regionPromises,
   ]);
 
@@ -453,7 +524,99 @@ async function loadSubjectPreview(datasetMeta, subjectMeta, baseDir) {
   return subject;
 }
 
+async function loadJson(url) {
+  const res = await fetch(url, FETCH_OPTIONS);
+  if (!res.ok) {
+    throw new Error(`Could not fetch ${url}`);
+  }
+  return res.json();
+}
+
+async function loadCortexSubjectPreview(datasetMeta, subjectMeta, baseDir) {
+  const manifestUrl = joinUrl(baseDir, subjectMeta.mesh_manifest_file);
+  const manifestDir = dirnameUrl(manifestUrl);
+  const manifest = await loadJson(manifestUrl);
+  const hemis = {};
+  await Promise.all(
+    ["lh", "rh"].map(async (hemi) => {
+      const hemiMeta = manifest.hemis[hemi];
+      const files = hemiMeta.files;
+      const [coords, faces, colors, labels, fullToSample] = await Promise.all([
+        loadTypedArray(joinUrl(manifestDir, files.coords), datasetMeta.dtype.coords, hemiMeta.vertex_count * 3),
+        loadTypedArray(joinUrl(manifestDir, files.faces), datasetMeta.dtype.faces, hemiMeta.face_count * 3),
+        loadTypedArray(joinUrl(manifestDir, files.colors), datasetMeta.dtype.color, hemiMeta.vertex_count * 3),
+        loadTypedArray(joinUrl(manifestDir, files.labels), datasetMeta.dtype.label, hemiMeta.vertex_count),
+        loadTypedArray(joinUrl(manifestDir, files.full_to_sample), datasetMeta.dtype.index, hemiMeta.vertex_count),
+      ]);
+
+      hemis[hemi] = {
+        vertexCount: hemiMeta.vertex_count,
+        faceCount: hemiMeta.face_count,
+        sampleCount: hemiMeta.sample_count,
+        files,
+        coords,
+        displayCoords: buildInflatedDisplayCoords(coords, hemi),
+        faces,
+        colors,
+        labels,
+        fullToSample,
+        sampleFeatures: null,
+        baseColors: new Uint8Array(colors),
+      };
+    })
+  );
+
+  return {
+    name: subjectMeta.name,
+    hemis,
+    meshReady: true,
+    featuresReady: false,
+    displayCache: new Map(),
+  };
+}
+
+async function ensureMeshLib() {
+  if (state.meshLib) {
+    return state.meshLib;
+  }
+
+  const [threeModule, controlsModule] = await Promise.all([
+    import(LOCAL_THREE_MODULE),
+    import(LOCAL_ORBIT_CONTROLS),
+  ]);
+  state.meshLib = {
+    THREE: threeModule,
+    OrbitControls: controlsModule.OrbitControls,
+    raycaster: new threeModule.Raycaster(),
+    pointer: new threeModule.Vector2(),
+  };
+  return state.meshLib;
+}
+
 async function createDataset(datasetMeta, baseDir) {
+  if (datasetMeta.viewerKind === "mesh") {
+    let loadedCount = 0;
+    const total = datasetMeta.subjects.length;
+    statusText.textContent = `Loading cortical meshes (0/${total})`;
+    const subjects = await Promise.all(
+      datasetMeta.subjects.map(async (subjectMeta) => {
+        const subject = await loadCortexSubjectPreview(datasetMeta, subjectMeta, baseDir);
+        loadedCount += 1;
+        statusText.textContent = `Loading cortical meshes (${loadedCount}/${total})`;
+        return subject;
+      })
+    );
+
+    return {
+      meta: datasetMeta,
+      subjects,
+      featuresReadyCount: 0,
+      featuresTotal: datasetMeta.subjects.length,
+      featureLoadPromise: null,
+      featureLoadError: null,
+    };
+  }
+
   const subjects = [];
   for (let i = 0; i < datasetMeta.subjects.length; i++) {
     statusText.textContent = `Loading preview slices (${i + 1}/${datasetMeta.subjects.length})`;
@@ -472,6 +635,17 @@ async function createDataset(datasetMeta, baseDir) {
 
 function getActiveDataset() {
   return state.datasetCache.get(state.datasetId);
+}
+
+function isMeshDataset(dataset = getActiveDataset()) {
+  return Boolean(dataset?.meta?.viewerKind === "mesh");
+}
+
+function getParcelLabel(dataset, hemi, label) {
+  if (!dataset?.meta?.parcelNames) {
+    return label >= 0 ? `parcel ${label}` : "unlabeled";
+  }
+  return dataset.meta.parcelNames[`${hemi}:${label}`] ?? `parcel ${label}`;
 }
 
 function getDisplayOption(datasetMeta) {
@@ -728,11 +902,275 @@ function featureProgressText(dataset) {
 }
 
 function loadingStatusText(dataset, prefix = "Loading feature data") {
-  return `${prefix} ${featureProgressText(dataset)}. Pick after load.`;
+  return `${prefix} ${featureProgressText(dataset)}.`;
 }
 
 function previewReadyStatusText(dataset) {
-  return `Preview ready. Features ${featureProgressText(dataset)}.`;
+  return dataset.meta.viewerKind === "mesh"
+    ? `Loading cortical feature anchors ${featureProgressText(dataset)}.`
+    : `Loading feature data ${featureProgressText(dataset)}.`;
+}
+
+function hasActiveReference() {
+  return Boolean(state.selected && state.selected.datasetId === state.datasetId);
+}
+
+function syncLegendSizing() {
+  cancelAnimationFrame(layoutSyncFrame);
+  layoutSyncFrame = requestAnimationFrame(() => {
+    const firstPanel = panelGrid.querySelector(".panel");
+    const firstShell = firstPanel?.querySelector(".slice-shell");
+    if (!firstPanel || !firstShell) {
+      return;
+    }
+
+    const shellRect = firstShell.getBoundingClientRect();
+    const panelRect = firstPanel.getBoundingClientRect();
+    document.documentElement.style.setProperty("--slice-view-height", `${Math.round(shellRect.height)}px`);
+    document.documentElement.style.setProperty(
+      "--slice-top-offset",
+      `${Math.max(0, Math.round(shellRect.top - panelRect.top))}px`
+    );
+  });
+}
+
+function getMeshSelectionText(dataset, panel, hemi, label) {
+  return `${subjectLabel(panel.idx)} · ${hemi.toUpperCase()} · ${getParcelLabel(dataset, hemi, label)}`;
+}
+
+function buildMeshReferenceVector(subject, hemi, sampleIndex, channelIndices) {
+  const hemiData = subject.hemis[hemi];
+  const ref = new Float32Array(channelIndices.length);
+  let norm2 = 0;
+  const base = sampleIndex * state.meta.datasets.find((item) => item.id === state.datasetId).featureDim;
+  for (let i = 0; i < channelIndices.length; i++) {
+    const value = hemiData.sampleFeatures[base + channelIndices[i]];
+    ref[i] = value;
+    norm2 += value * value;
+  }
+  const norm = Math.sqrt(norm2);
+  if (norm < 1e-8) {
+    return null;
+  }
+  for (let i = 0; i < ref.length; i++) {
+    ref[i] /= norm;
+  }
+  return ref;
+}
+
+function cosineMeshSamples(hemiData, refVec, channelIndices, featureDim) {
+  const sims = new Float32Array(hemiData.sampleCount);
+  const features = hemiData.sampleFeatures;
+  for (let sampleIdx = 0; sampleIdx < hemiData.sampleCount; sampleIdx++) {
+    const base = sampleIdx * featureDim;
+    let dot = 0;
+    let norm2 = 0;
+    for (let j = 0; j < channelIndices.length; j++) {
+      const value = features[base + channelIndices[j]];
+      dot += value * refVec[j];
+      norm2 += value * value;
+    }
+    sims[sampleIdx] = dot / (Math.sqrt(norm2) + 1e-8);
+  }
+  return sims;
+}
+
+function summarizeMeshSimilarity(perHemi) {
+  let sum = 0;
+  let n = 0;
+  let max = Number.NEGATIVE_INFINITY;
+  for (const hemi of ["lh", "rh"]) {
+    const sims = perHemi[hemi]?.sims ?? null;
+    if (!sims?.length) {
+      continue;
+    }
+    for (let i = 0; i < sims.length; i++) {
+      sum += sims[i];
+      n += 1;
+      if (sims[i] > max) {
+        max = sims[i];
+      }
+    }
+  }
+  if (!n) {
+    return null;
+  }
+  return { mean: sum / n, max };
+}
+
+function updateMeshColors(panel, similarityEntry) {
+  for (const hemi of ["lh", "rh"]) {
+    const hemiRuntime = panel.meshRuntime?.hemis?.[hemi];
+    const hemiData = panel.subject.hemis[hemi];
+    if (!hemiRuntime || !hemiData) {
+      continue;
+    }
+    const colorArray = hemiRuntime.colorAttr.array;
+    const baseColors = hemiData.baseColors;
+    const sims = similarityEntry?.hemis?.[hemi]?.sims ?? null;
+    if (!sims) {
+      colorArray.set(baseColors);
+      hemiRuntime.colorAttr.needsUpdate = true;
+      continue;
+    }
+    for (let vertexIdx = 0; vertexIdx < hemiData.vertexCount; vertexIdx++) {
+      const sampleIdx = hemiData.fullToSample[vertexIdx];
+      const sim = sims[sampleIdx];
+      const [r, g, b] = colorMapViridis(clamp01(sim));
+      const baseOffset = vertexIdx * 3;
+      colorArray[baseOffset + 0] = Math.round(baseColors[baseOffset + 0] * (1 - state.alpha) + r * state.alpha);
+      colorArray[baseOffset + 1] = Math.round(baseColors[baseOffset + 1] * (1 - state.alpha) + g * state.alpha);
+      colorArray[baseOffset + 2] = Math.round(baseColors[baseOffset + 2] * (1 - state.alpha) + b * state.alpha);
+    }
+    hemiRuntime.colorAttr.needsUpdate = true;
+  }
+}
+
+function syncMeshMarker(panel) {
+  const marker = panel.meshRuntime?.selectionMarker;
+  if (!marker) {
+    return;
+  }
+  const isReference =
+    state.selected &&
+    state.selected.datasetId === state.datasetId &&
+    state.selected.subjectIndex === panel.idx &&
+    state.selected.kind === "mesh";
+  if (!isReference) {
+    marker.visible = false;
+    return;
+  }
+  const hemiRuntime = panel.meshRuntime.hemis[state.selected.hemi];
+  const positionAttr = hemiRuntime.geometry.getAttribute("position");
+  const i3 = state.selected.fullVertexIndex * 3;
+  marker.position.set(
+    positionAttr.array[i3 + 0],
+    positionAttr.array[i3 + 1],
+    positionAttr.array[i3 + 2]
+  );
+  marker.position.add(hemiRuntime.mesh.position);
+  marker.position.add(panel.meshRuntime.group.position);
+  marker.visible = true;
+}
+
+function renderMeshPanel(panel, similarityEntry) {
+  if (!panel.meshRuntime) {
+    return;
+  }
+
+  const dataset = getActiveDataset();
+  updateMeshColors(panel, similarityEntry);
+  syncMeshMarker(panel);
+
+  panel.title.textContent = subjectLabel(panel.idx);
+  panel.meta.textContent = "Inflated LH / RH lateral view";
+
+  const isReference =
+    state.selected &&
+    state.selected.datasetId === state.datasetId &&
+    state.selected.subjectIndex === panel.idx &&
+    state.selected.kind === "mesh";
+
+  if (!panel.subject.featuresReady) {
+    panel.badge.textContent = "Loading";
+  } else if (isReference && similarityEntry?.stats) {
+    panel.badge.textContent = `Ref · ${similarityEntry.stats.mean.toFixed(2)}`;
+  } else if (isReference) {
+    panel.badge.textContent = "Ref";
+  } else if (similarityEntry?.stats) {
+    panel.badge.textContent = `Mean ${similarityEntry.stats.mean.toFixed(2)}`;
+  } else {
+    panel.badge.textContent = "Parcellation";
+  }
+
+  panel.node.classList.remove("is-loading");
+  panel.node.classList.add("is-mesh");
+  panel.node.classList.toggle("is-reference", Boolean(isReference));
+  panel.node.classList.toggle(
+    "is-awaiting-pick",
+    !hasActiveReference() && dataset.featuresReadyCount >= dataset.featuresTotal
+  );
+  panel.note.textContent = panel.subject.featuresReady ? "Left-drag to scrub · Right-drag to orbit" : `Loading features ${featureProgressText(dataset)}`;
+
+  const rect = panel.canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width * Math.min(window.devicePixelRatio || 1, 2)));
+  const height = Math.max(1, Math.round(rect.height * Math.min(window.devicePixelRatio || 1, 2)));
+  if (panel.meshRuntime.renderer.domElement.width !== width || panel.meshRuntime.renderer.domElement.height !== height) {
+    panel.meshRuntime.renderer.setSize(rect.width, rect.height, false);
+    fitMeshCamera(panel);
+  }
+  panel.meshRuntime.renderer.render(panel.meshRuntime.scene, panel.meshRuntime.camera);
+}
+
+function requestPanelRender(panel) {
+  if (!panel?.meshRuntime) {
+    return;
+  }
+  cancelAnimationFrame(panel.meshRuntime.frameHandle ?? 0);
+  panel.meshRuntime.frameHandle = requestAnimationFrame(() =>
+    renderMeshPanel(panel, state.similarityCache?.perPanel?.[panel.idx] ?? null)
+  );
+}
+
+function resolveMeshVertexFromHit(intersection, mesh) {
+  const attr = mesh.geometry.getAttribute("position");
+  const pointLocal = mesh.worldToLocal(intersection.point.clone());
+  const indices = [intersection.face.a, intersection.face.b, intersection.face.c];
+  let bestVertex = indices[0];
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const vertexIndex of indices) {
+    const i3 = vertexIndex * 3;
+    const dx = attr.array[i3 + 0] - pointLocal.x;
+    const dy = attr.array[i3 + 1] - pointLocal.y;
+    const dz = attr.array[i3 + 2] - pointLocal.z;
+    const dist2 = dx * dx + dy * dy + dz * dz;
+    if (dist2 < bestDistance) {
+      bestDistance = dist2;
+      bestVertex = vertexIndex;
+    }
+  }
+  return bestVertex;
+}
+
+function pickMeshReference(event, panel) {
+  const dataset = getActiveDataset();
+  if (!dataset || dataset.featuresReadyCount < dataset.featuresTotal) {
+    return false;
+  }
+
+  const rect = panel.canvas.getBoundingClientRect();
+  const { raycaster, pointer } = state.meshLib;
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, panel.meshRuntime.camera);
+  const objects = [panel.meshRuntime.hemis.lh.mesh, panel.meshRuntime.hemis.rh.mesh];
+  const intersections = raycaster.intersectObjects(objects, false);
+  if (!intersections.length) {
+    return false;
+  }
+
+  const hit = intersections[0];
+  const mesh = hit.object;
+  const hemi = mesh.userData.hemi;
+  const fullVertexIndex = resolveMeshVertexFromHit(hit, mesh);
+  const hemiData = panel.subject.hemis[hemi];
+  const sampleIndex = hemiData.fullToSample[fullVertexIndex];
+  const label = hemiData.labels[fullVertexIndex];
+
+  state.selected = {
+    datasetId: state.datasetId,
+    subjectIndex: panel.idx,
+    kind: "mesh",
+    hemi,
+    fullVertexIndex,
+    sampleIndex,
+    label,
+  };
+  invalidateSimilarityCache();
+  pickedText.textContent = getMeshSelectionText(dataset, panel, hemi, label);
+  statusText.textContent = "Computing cortical similarity maps...";
+  renderPanels();
+  return true;
 }
 
 function ensureSimilarityCache() {
@@ -749,8 +1187,10 @@ function ensureSimilarityCache() {
   const cacheKey = {
     datasetId: state.datasetId,
     subjectIndex: state.selected.subjectIndex,
-    x: state.selected.x,
-    y: state.selected.y,
+    selectionKey:
+      state.selected.kind === "mesh"
+        ? `${state.selected.hemi}:${state.selected.sampleIndex}`
+        : `${state.selected.x}:${state.selected.y}`,
     regionId: state.activeRegionId,
     groupKey: activeGroupKey(),
   };
@@ -759,8 +1199,7 @@ function ensureSimilarityCache() {
     state.similarityCache &&
     state.similarityCache.datasetId === cacheKey.datasetId &&
     state.similarityCache.subjectIndex === cacheKey.subjectIndex &&
-    state.similarityCache.x === cacheKey.x &&
-    state.similarityCache.y === cacheKey.y &&
+    state.similarityCache.selectionKey === cacheKey.selectionKey &&
     state.similarityCache.regionId === cacheKey.regionId &&
     state.similarityCache.groupKey === cacheKey.groupKey
   ) {
@@ -771,6 +1210,32 @@ function ensureSimilarityCache() {
   if (!channelIndices.length) {
     statusText.textContent = "Enable at least one contrast family.";
     return null;
+  }
+
+  if (dataset.meta.viewerKind === "mesh") {
+    const refSubject = dataset.subjects[state.selected.subjectIndex];
+    const refVec = buildMeshReferenceVector(refSubject, state.selected.hemi, state.selected.sampleIndex, channelIndices);
+    if (!refVec) {
+      statusText.textContent = "Reference vector is empty at this vertex.";
+      return null;
+    }
+
+    const perPanel = dataset.subjects.map((subject) => {
+      const perHemi = {};
+      for (const hemi of ["lh", "rh"]) {
+        perHemi[hemi] = {
+          sims: cosineMeshSamples(subject.hemis[hemi], refVec, channelIndices, dataset.meta.featureDim),
+        };
+      }
+      return {
+        hemis: perHemi,
+        stats: summarizeMeshSimilarity(perHemi),
+      };
+    });
+
+    state.similarityCache = { ...cacheKey, perPanel };
+    statusText.textContent = "Cortical similarity maps ready.";
+    return state.similarityCache;
   }
 
   const refSubject = dataset.subjects[state.selected.subjectIndex];
@@ -807,6 +1272,11 @@ function ensureSimilarityCache() {
 
 function renderPanel(panel, similarityEntry) {
   const dataset = getActiveDataset();
+  if (dataset.meta.viewerKind === "mesh") {
+    renderMeshPanel(panel, similarityEntry);
+    return;
+  }
+
   const subject = panel.subject;
   const displayOption = getDisplayOption(dataset.meta);
   const visible = getSubjectDisplayImage(subject, displayOption);
@@ -870,7 +1340,7 @@ function renderPanel(panel, similarityEntry) {
   panel.meta.textContent = `Axial slice z=${subject.slice}`;
 
   if (!subject.featuresReady) {
-    panel.badge.textContent = `Loading ${featureProgressText(dataset)}`;
+    panel.badge.textContent = "Loading";
   } else if (displayOption.kind === "feature" && !subject.displayCache.has(`f${displayOption.index}`)) {
     panel.badge.textContent = "Preparing";
   } else if (isReference && similarityEntry?.stats) {
@@ -889,6 +1359,11 @@ function renderPanel(panel, similarityEntry) {
 
   panel.node.classList.remove("is-loading");
   panel.node.classList.toggle("is-reference", Boolean(isReference));
+  panel.node.classList.toggle(
+    "is-awaiting-pick",
+    !hasActiveReference() && dataset.featuresReadyCount >= dataset.featuresTotal
+  );
+  panel.note.textContent = subject.featuresReady ? "" : `Loading features ${featureProgressText(dataset)}`;
 }
 
 function renderPanels() {
@@ -903,6 +1378,7 @@ function renderPanels() {
     renderPanel(panel, similarityEntry);
   }
   updateSelectionSummary();
+  syncLegendSizing();
 }
 
 function showLoadingPanels(datasetMeta) {
@@ -915,6 +1391,7 @@ function showLoadingPanels(datasetMeta) {
     const title = node.querySelector(".panel-title");
     const meta = node.querySelector(".panel-meta");
     const badge = node.querySelector(".panel-badge");
+    const note = node.querySelector(".slice-note");
     node.classList.add("is-loading");
     canvas.width = datasetMeta.width;
     canvas.height = datasetMeta.height;
@@ -928,15 +1405,144 @@ function showLoadingPanels(datasetMeta) {
       title,
       meta,
       badge,
+      note,
       bufferCanvas: null,
       subject: null,
       idx,
       viewState: null,
     });
   });
+
+  syncLegendSizing();
 }
 
-function buildPanels(dataset) {
+function disposePanelRuntime(panel) {
+  if (!panel?.meshRuntime) {
+    return;
+  }
+  cancelAnimationFrame(panel.meshRuntime.frameHandle ?? 0);
+  panel.meshRuntime.controls?.dispose();
+  panel.meshRuntime.renderer?.dispose();
+  for (const hemi of ["lh", "rh"]) {
+    panel.meshRuntime.hemis?.[hemi]?.geometry?.dispose();
+    panel.meshRuntime.hemis?.[hemi]?.material?.dispose();
+  }
+  panel.meshRuntime.selectionMarker?.geometry?.dispose();
+  panel.meshRuntime.selectionMarker?.material?.dispose();
+  panel.meshRuntime = null;
+}
+
+function fitMeshCamera(panel) {
+  const runtime = panel.meshRuntime;
+  if (!runtime) {
+    return;
+  }
+
+  const rect = panel.canvas.getBoundingClientRect();
+  const aspect = Math.max(1e-3, rect.width / Math.max(rect.height, 1));
+  const box = new runtime.THREE.Box3().setFromObject(runtime.group);
+  const size = box.getSize(new runtime.THREE.Vector3());
+  const center = box.getCenter(new runtime.THREE.Vector3());
+  const halfY = Math.max(size.y * 0.5, 1);
+  const halfX = Math.max(size.x * 0.5, 1);
+  const fov = (runtime.camera.fov * Math.PI) / 180;
+  const distY = halfY / Math.tan(fov / 2);
+  const distX = halfX / (aspect * Math.tan(fov / 2));
+  const distance = Math.max(distX, distY, size.z * 1.6) * 1.08;
+
+  runtime.camera.aspect = aspect;
+  runtime.camera.near = Math.max(0.1, distance * 0.1);
+  runtime.camera.far = distance * 6 + size.z * 3;
+  runtime.camera.position.set(center.x, center.y, center.z + distance);
+  runtime.camera.lookAt(center);
+  runtime.camera.updateProjectionMatrix();
+
+  runtime.controls.target.copy(center);
+  runtime.controls.minDistance = distance * 0.55;
+  runtime.controls.maxDistance = distance * 2.2;
+  runtime.controls.update();
+}
+
+async function initializeMeshPanel(panel) {
+  const { THREE, OrbitControls } = await ensureMeshLib();
+  const renderer = new THREE.WebGLRenderer({ canvas: panel.canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 2000);
+  const controls = new OrbitControls(camera, panel.canvas);
+  controls.enablePan = false;
+  controls.enableDamping = false;
+  controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+  controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
+  controls.touches.ONE = THREE.TOUCH.ROTATE;
+
+  const hemis = {};
+  const group = new THREE.Group();
+  scene.add(group);
+
+  const layout = {};
+  for (const hemi of ["lh", "rh"]) {
+    const hemiData = panel.subject.hemis[hemi];
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(hemiData.displayCoords ?? hemiData.coords, 3));
+    const colorAttr = new THREE.Uint8BufferAttribute(new Uint8Array(hemiData.baseColors), 3, true);
+    geometry.setAttribute("color", colorAttr);
+    geometry.setIndex(new THREE.BufferAttribute(hemiData.faces, 1));
+    const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.userData.hemi = hemi;
+
+    const box = new THREE.Box3().setFromBufferAttribute(geometry.getAttribute("position"));
+    const center = box.getCenter(new THREE.Vector3());
+    group.add(mesh);
+    layout[hemi] = {
+      center,
+      size: box.getSize(new THREE.Vector3()),
+    };
+    hemis[hemi] = { mesh, geometry, material, colorAttr };
+  }
+
+  const gap = Math.max(layout.lh.size.x, layout.rh.size.x) * 0.16;
+  const xOffsets = {
+    lh: -(layout.lh.size.x * 0.5 + gap * 0.5),
+    rh: layout.rh.size.x * 0.5 + gap * 0.5,
+  };
+  for (const hemi of ["lh", "rh"]) {
+    const { center } = layout[hemi];
+    hemis[hemi].mesh.position.set(xOffsets[hemi] - center.x, -center.y, -center.z);
+  }
+
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(2.3, 20, 20),
+    new THREE.MeshBasicMaterial({ color: 0xff7446 })
+  );
+  marker.visible = false;
+  scene.add(marker);
+
+  const groupBox = new THREE.Box3().setFromObject(group);
+  const center = groupBox.getCenter(new THREE.Vector3());
+  group.position.set(-center.x, -center.y, -center.z);
+  controls.addEventListener("change", () => requestPanelRender(panel));
+
+  panel.meshRuntime = {
+    THREE,
+    renderer,
+    scene,
+    camera,
+    controls,
+    group,
+    hemis,
+    selectionMarker: marker,
+    frameHandle: 0,
+  };
+
+  fitMeshCamera(panel);
+}
+
+async function buildPanels(dataset) {
+  for (const panel of state.panels) {
+    disposePanelRuntime(panel);
+  }
   panelGrid.innerHTML = "";
   state.panels = [];
 
@@ -946,15 +1552,27 @@ function buildPanels(dataset) {
     const title = node.querySelector(".panel-title");
     const meta = node.querySelector(".panel-meta");
     const badge = node.querySelector(".panel-badge");
-    const bufferCanvas = document.createElement("canvas");
-    bufferCanvas.width = subject.width;
-    bufferCanvas.height = subject.height;
-    canvas.width = subject.width;
-    canvas.height = subject.height;
+    const note = node.querySelector(".slice-note");
+    const bufferCanvas = dataset.meta.viewerKind === "mesh" ? null : document.createElement("canvas");
+    if (bufferCanvas) {
+      bufferCanvas.width = subject.width;
+      bufferCanvas.height = subject.height;
+    }
+    if (dataset.meta.viewerKind === "mesh") {
+      canvas.width = 720;
+      canvas.height = 260;
+    } else {
+      canvas.width = subject.width;
+      canvas.height = subject.height;
+    }
     title.textContent = subjectLabel(idx);
-    meta.textContent = `Axial slice z=${subject.slice}`;
-    badge.textContent = "Preview";
-    canvas.style.cursor = "crosshair";
+    meta.textContent = dataset.meta.viewerKind === "mesh" ? "Inflated LH / RH lateral view" : `Axial slice z=${subject.slice}`;
+    badge.textContent = dataset.meta.viewerKind === "mesh" ? "Parcellation" : "Preview";
+    canvas.style.cursor = dataset.meta.viewerKind === "mesh" ? "crosshair" : "crosshair";
+    canvas.title =
+      dataset.meta.viewerKind === "mesh"
+        ? "Left-drag to scrub a reference vertex. Right-drag to orbit. Wheel to zoom."
+        : "Drag to scrub a reference voxel";
 
     const panel = {
       node,
@@ -962,25 +1580,38 @@ function buildPanels(dataset) {
       title,
       meta,
       badge,
+      note,
       bufferCanvas,
       subject,
       idx,
       viewState: null,
+      meshRuntime: null,
     };
 
-    canvas.addEventListener("click", (event) => handlePick(event, panel));
-    canvas.addEventListener(
-      "wheel",
-      (event) => {
-        event.preventDefault();
-        setZoom(state.zoom + (event.deltaY < 0 ? 0.15 : -0.15));
-      },
-      { passive: false }
-    );
+    if (dataset.meta.viewerKind === "mesh") {
+      canvas.addEventListener("pointerdown", (event) => handlePanelPointerDown(event, panel));
+      canvas.addEventListener("pointermove", (event) => handlePanelPointerMove(event, panel));
+      canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+    } else {
+      canvas.addEventListener("pointerdown", (event) => handlePanelPointerDown(event, panel));
+      canvas.addEventListener("pointermove", (event) => handlePanelPointerMove(event, panel));
+      canvas.addEventListener(
+        "wheel",
+        (event) => {
+          event.preventDefault();
+          setZoom(state.zoom + (event.deltaY < 0 ? 0.15 : -0.15));
+        },
+        { passive: false }
+      );
+    }
 
     panelGrid.appendChild(node);
     state.panels.push(panel);
   });
+
+  if (dataset.meta.viewerKind === "mesh") {
+    await Promise.all(state.panels.map((panel) => initializeMeshPanel(panel)));
+  }
 
   renderPanels();
 }
@@ -1005,43 +1636,21 @@ function getCanvasPixel(event, panel) {
   };
 }
 
-function clearSelection(statusOverride = null) {
-  state.selected = null;
-  invalidateSimilarityCache();
-  pickedText.textContent = "No reference voxel selected. Click a slice to project voxel homology across subjects.";
-  if (statusOverride) {
-    statusText.textContent = statusOverride;
-  }
-  renderPanels();
-}
-
-function handlePick(event, panel) {
+function pickSliceReference(panel, coords) {
   const dataset = getActiveDataset();
-  if (!dataset) {
-    return;
-  }
-  if (dataset.featuresReadyCount < dataset.featuresTotal) {
-    statusText.textContent = loadingStatusText(dataset, "Feature data still loading");
-    return;
-  }
-
-  const coords = getCanvasPixel(event, panel);
-  if (!coords) {
-    return;
-  }
-
   const flat = coords.y * panel.subject.width + coords.x;
   const focusInfo = getActiveMaskInfo(panel.subject);
   if (!focusInfo.mask[flat]) {
     statusText.textContent = state.activeRegionId
       ? `Pick inside ${getRegionLabel(dataset, state.activeRegionId)}.`
       : "Pick inside brain mask.";
-    return;
+    return false;
   }
 
   state.selected = {
     datasetId: state.datasetId,
     subjectIndex: panel.idx,
+    kind: "slice",
     x: coords.x,
     y: coords.y,
   };
@@ -1052,6 +1661,69 @@ function handlePick(event, panel) {
   )}`;
   statusText.textContent = "Computing homology maps...";
   renderPanels();
+  return true;
+}
+
+function clearSelection(statusOverride = null) {
+  state.selected = null;
+  invalidateSimilarityCache();
+  pickedText.textContent = isMeshDataset()
+    ? "No reference vertex selected. Left-drag over a cortical mesh to project similarity across subjects."
+    : "No reference voxel selected. Drag or click a slice to project voxel homology across subjects.";
+  if (statusOverride) {
+    statusText.textContent = statusOverride;
+  }
+  renderPanels();
+}
+
+function handlePanelPointerDown(event, panel) {
+  const dataset = getActiveDataset();
+  if (!dataset) {
+    return;
+  }
+  if (event.button !== 0) {
+    return;
+  }
+  if (dataset.featuresReadyCount < dataset.featuresTotal) {
+    statusText.textContent = loadingStatusText(dataset, "Feature data still loading");
+    return;
+  }
+
+  state.dragPicking = { panelIdx: panel.idx, pointerId: event.pointerId };
+  panel.canvas.setPointerCapture?.(event.pointerId);
+  if (dataset.meta.viewerKind === "mesh") {
+    pickMeshReference(event, panel);
+  } else {
+    const coords = getCanvasPixel(event, panel);
+    if (coords) {
+      pickSliceReference(panel, coords);
+    }
+  }
+}
+
+function handlePanelPointerMove(event, panel) {
+  if (
+    !state.dragPicking ||
+    state.dragPicking.panelIdx !== panel.idx ||
+    state.dragPicking.pointerId !== event.pointerId ||
+    !(event.buttons & 1)
+  ) {
+    return;
+  }
+
+  const dataset = getActiveDataset();
+  if (!dataset) {
+    return;
+  }
+  if (dataset.meta.viewerKind === "mesh") {
+    pickMeshReference(event, panel);
+    return;
+  }
+
+  const coords = getCanvasPixel(event, panel);
+  if (coords) {
+    pickSliceReference(panel, coords);
+  }
 }
 
 function updateSelectionSummary() {
@@ -1063,14 +1735,17 @@ function updateSelectionSummary() {
 
   const parts = [
     dataset.meta.name,
-    getRegionLabel(dataset, state.activeRegionId),
     `${state.activeSimilarityGroups.size}/${dataset.meta.similarityGroups.length} families`,
   ];
-  if (dataset.featuresReadyCount < dataset.featuresTotal) {
-    parts.push(`Loading ${featureProgressText(dataset)}`);
+  if (dataset.meta.viewerKind !== "mesh") {
+    parts.splice(1, 0, getRegionLabel(dataset, state.activeRegionId));
   }
   if (state.selected && state.selected.datasetId === state.datasetId) {
-    parts.push(`Ref: ${subjectLabel(state.selected.subjectIndex)}`);
+    if (state.selected.kind === "mesh") {
+      parts.push(`Ref: ${subjectLabel(state.selected.subjectIndex)} ${state.selected.hemi.toUpperCase()}`);
+    } else {
+      parts.push(`Ref: ${subjectLabel(state.selected.subjectIndex)}`);
+    }
   }
   selectionSummary.textContent = parts.join(" · ");
 }
@@ -1090,26 +1765,48 @@ function updateStats() {
     "";
 
   featureCount.textContent = String(dataset.meta.featureDim);
-  datasetDescription.textContent =
-    dataset.featuresReadyCount < dataset.featuresTotal
-      ? `${dataset.meta.description} Web-ready feature tensors loading ${featureProgressText(dataset)}.`
-      : dataset.meta.description;
+  datasetDescription.textContent = dataset.meta.description;
   activeFamiliesText.textContent = `${state.activeSimilarityGroups.size} of ${
     dataset.meta.similarityGroups.length
   } contrast families active.`;
   contrastLabel.textContent = getDisplayOption(dataset.meta).label;
-  healthyPrepText.textContent = healthyMeta?.preprocessingSummary ?? "";
-  healthyPrepText.hidden = !healthyMeta?.preprocessingSummary;
-  tumorPrepText.textContent = tumorMeta?.preprocessingSummary ?? "";
-  tumorPrepText.hidden = !tumorMeta?.preprocessingSummary;
+  interactionHint.textContent =
+    dataset.meta.interactionHint ||
+    (dataset.meta.viewerKind === "mesh"
+      ? "Left-drag to scrub a reference vertex. Right-drag to orbit. Use the mouse wheel to zoom."
+      : "Drag across any subject slice to scrub the reference voxel continuously.");
+
+  if (dataset.meta.id === "healthy") {
+    healthyPrepText.textContent = healthyMeta?.preprocessingSummary ?? "";
+    healthyPrepText.hidden = !healthyMeta?.preprocessingSummary;
+    tumorPrepText.textContent = tumorMeta?.preprocessingSummary ?? "";
+    tumorPrepText.hidden = !tumorMeta?.preprocessingSummary;
+  } else if (dataset.meta.id === "tumor") {
+    healthyPrepText.textContent = tumorMeta?.preprocessingSummary ?? "";
+    healthyPrepText.hidden = !tumorMeta?.preprocessingSummary;
+    tumorPrepText.hidden = true;
+  } else {
+    healthyPrepText.textContent = dataset.meta.preprocessingSummary ?? "";
+    healthyPrepText.hidden = !dataset.meta.preprocessingSummary;
+    tumorPrepText.hidden = true;
+  }
   deliveryText.textContent = deliverySummary;
   deliveryText.hidden = !deliverySummary;
+
+  const isMesh = dataset.meta.viewerKind === "mesh";
+  contrastControlStack.hidden = isMesh;
+  zoomControlStack.hidden = isMesh;
+  regionStripCard.hidden = isMesh || dataset.meta.regions.length === 0;
+  similarityStripCard.hidden = dataset.meta.similarityGroups.length === 0;
 }
 
 function renderRegionControls() {
   const dataset = getActiveDataset();
   regionControls.innerHTML = "";
   if (!dataset) {
+    return;
+  }
+  if (!dataset.meta.regions.length || dataset.meta.viewerKind === "mesh") {
     return;
   }
 
@@ -1204,6 +1901,13 @@ function syncContrastControls() {
   if (!dataset) {
     return;
   }
+  if (dataset.meta.viewerKind === "mesh") {
+    contrastSlider.min = "0";
+    contrastSlider.max = "0";
+    contrastSlider.value = "0";
+    contrastLabel.textContent = "Inflated cortical surface";
+    return;
+  }
   contrastSlider.min = "0";
   contrastSlider.max = String(dataset.meta.displayOptions.length - 1);
   contrastSlider.value = String(state.displayIndex);
@@ -1211,11 +1915,18 @@ function syncContrastControls() {
 }
 
 function syncZoomControls() {
+  if (isMeshDataset()) {
+    zoomValue.textContent = "orbit";
+    return;
+  }
   zoomSlider.value = String(Math.round(state.zoom * 100));
   zoomValue.textContent = `${state.zoom.toFixed(1)}x`;
 }
 
 function setZoom(nextZoom) {
+  if (isMeshDataset()) {
+    return;
+  }
   const clamped = clamp(nextZoom, 1, 2.8);
   if (Math.abs(clamped - state.zoom) < 1e-6) {
     return;
@@ -1237,10 +1948,30 @@ function stepContrast(direction) {
 }
 
 async function loadFeaturesIntoSubject(dataset, idx, baseDir) {
+  if (dataset.meta.viewerKind === "mesh") {
+    const subject = dataset.subjects[idx];
+    const subjectMeta = dataset.meta.subjects[idx];
+    const manifestUrl = joinUrl(baseDir, subjectMeta.mesh_manifest_file);
+    const manifestDir = dirnameUrl(manifestUrl);
+    await Promise.all(
+      ["lh", "rh"].map(async (hemi) => {
+        const hemiData = subject.hemis[hemi];
+        const sampleLength = hemiData.sampleCount * dataset.meta.featureDim;
+        hemiData.sampleFeatures = await loadTypedArray(
+          joinUrl(manifestDir, hemiData.files.sample_features),
+          dataset.meta.dtype.feature,
+          sampleLength
+        );
+      })
+    );
+    subject.featuresReady = true;
+    return;
+  }
+
   const subject = dataset.subjects[idx];
   const subjectMeta = dataset.meta.subjects[idx];
   const featureLength = subject.pixelCount * dataset.meta.featureDim;
-  const features = await loadTypedArray(`${baseDir}/${subjectMeta.feature_file}`, dataset.meta.dtype.feature, featureLength);
+  const features = await loadTypedArray(joinUrl(baseDir, subjectMeta.feature_file), dataset.meta.dtype.feature, featureLength);
   const norms = new Float32Array(subject.pixelCount);
 
   for (let flat = 0; flat < subject.pixelCount; flat++) {
@@ -1264,7 +1995,10 @@ function startFeatureLoading(dataset) {
   }
 
   dataset.featureLoadPromise = (async () => {
-    const concurrency = Math.min(2, dataset.subjects.length);
+    const concurrency =
+      dataset.meta.viewerKind === "mesh"
+        ? Math.min(dataset.subjects.length, 4)
+        : Math.min(2, dataset.subjects.length);
     let nextIndex = 0;
 
     const worker = async () => {
@@ -1289,7 +2023,10 @@ function startFeatureLoading(dataset) {
           if (dataset.featuresReadyCount < dataset.featuresTotal) {
             statusText.textContent = loadingStatusText(dataset);
           } else {
-            statusText.textContent = "Click any subject panel to choose a reference voxel.";
+            statusText.textContent =
+              dataset.meta.viewerKind === "mesh"
+                ? "Left-drag any cortical mesh to choose a reference vertex."
+                : "Drag any subject panel to choose a reference voxel.";
           }
         }
       }
@@ -1314,7 +2051,10 @@ function resetForDataset(dataset) {
   state.activeSimilarityGroups = new Set(dataset.meta.similarityGroups.map((group) => group.id));
   state.displayIndex = findDisplayIndex(dataset.meta, dataset.meta.defaultDisplay);
   state.zoom = 1;
-  pickedText.textContent = "No reference voxel selected. Click a slice to project voxel homology across subjects.";
+  pickedText.textContent =
+    dataset.meta.viewerKind === "mesh"
+      ? "No reference vertex selected. Left-drag any cortical mesh to project similarity across subjects."
+      : "No reference voxel selected. Drag or click a slice to project voxel homology across subjects.";
 }
 
 async function activateDataset(datasetId) {
@@ -1338,7 +2078,7 @@ async function activateDataset(datasetId) {
     resetForDataset(dataset);
   }
 
-  buildPanels(dataset);
+  await buildPanels(dataset);
   renderRegionControls();
   renderSimilarityControls();
   syncContrastControls();
@@ -1355,7 +2095,10 @@ async function activateDataset(datasetId) {
     statusText.textContent = previewReadyStatusText(dataset);
     startFeatureLoading(dataset);
   } else {
-    statusText.textContent = "Click any subject panel to choose a reference voxel.";
+    statusText.textContent =
+      dataset.meta.viewerKind === "mesh"
+        ? "Left-drag any cortical mesh to choose a reference vertex."
+        : "Drag any subject panel to choose a reference voxel.";
   }
 }
 
@@ -1392,5 +2135,12 @@ contrastNextBtn.addEventListener("click", () => stepContrast(1));
 
 alphaSlider.value = "86";
 syncZoomControls();
+window.addEventListener("resize", syncLegendSizing);
+window.addEventListener("pointerup", () => {
+  state.dragPicking = null;
+});
+window.addEventListener("pointercancel", () => {
+  state.dragPicking = null;
+});
 
 init();

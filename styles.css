@@ -2,6 +2,11 @@
   --bg-0: #07141f;
   --bg-1: #0c2335;
   --bg-2: #16354a;
+  --slice-view-height: 260px;
+  --slice-top-offset: 72px;
+  --legend-bar-width: 16px;
+  --legend-rail-width: 90px;
+  --legend-scale-width: 34px;
   --panel: rgba(11, 24, 37, 0.8);
   --panel-strong: rgba(8, 20, 32, 0.92);
   --panel-soft: rgba(15, 32, 48, 0.72);
@@ -40,6 +45,10 @@ button,
 input,
 output {
   font: inherit;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 button {
@@ -186,9 +195,7 @@ output,
 }
 
 .app-layout {
-  display: grid;
-  grid-template-columns: 272px minmax(0, 1fr);
-  gap: 22px;
+  display: block;
   margin-top: 22px;
 }
 
@@ -196,6 +203,9 @@ output,
   display: grid;
   gap: 18px;
   align-content: start;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .card,
@@ -359,31 +369,64 @@ output {
 }
 
 .viewer {
-  padding: 20px;
+  padding: 18px;
 }
 
-.viewer-shell {
+.viewer-top {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 244px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(82px, var(--legend-rail-width)) minmax(280px, 304px);
+  gap: 18px;
   align-items: start;
 }
 
-.viewer-main {
+.brain-stage {
   min-width: 0;
 }
 
-.viewer-controls {
+.legend-rail {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
-  gap: 14px;
-  margin-bottom: 16px;
+  align-content: start;
+  justify-items: center;
+  min-width: 0;
+  padding-top: var(--slice-top-offset);
 }
 
-.viewer-side {
+.legend-card {
   display: grid;
-  gap: 16px;
-  align-content: start;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  height: var(--slice-view-height);
+  padding: 0 8px;
+  border: 1px solid rgba(162, 197, 216, 0.14);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
+    rgba(6, 14, 23, 0.72);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.18);
+}
+
+.legend-title {
+  display: block;
+  margin: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(225, 239, 247, 0.6);
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  line-height: 1;
+  align-self: center;
+}
+
+.viewer-bottom {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+  align-items: start;
 }
 
 .control-strip-card,
@@ -468,30 +511,37 @@ output {
   font-size: 0.93rem;
 }
 
-.legend-vertical-wrap {
+.legend-scale {
   position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 18px;
-  gap: 12px;
-  align-items: stretch;
-  margin-top: 18px;
+  width: var(--legend-scale-width);
+  height: 100%;
 }
 
-.legend-vertical-labels {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: flex-end;
-  color: rgba(217, 235, 244, 0.72);
-  font-size: 0.76rem;
+.legend-end {
+  position: absolute;
+  right: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.74rem;
+  line-height: 1;
+  color: rgba(225, 239, 247, 0.68);
+  font-variant-numeric: tabular-nums;
+}
+
+.legend-scale > .legend-end:first-child {
+  top: 0;
+}
+
+.legend-scale > .legend-end:last-child {
+  bottom: 0;
 }
 
 .legend-vertical-bar {
-  width: 18px;
-  min-height: 228px;
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--legend-bar-width);
+  height: 100%;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   background: linear-gradient(
     180deg,
     rgb(253, 231, 37) 0%,
@@ -500,7 +550,25 @@ output {
     rgb(59, 82, 139) 75%,
     rgb(68, 1, 84) 100%
   );
-  box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 0 16px rgba(255, 255, 255, 0.08),
+    0 10px 28px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.legend-vertical-bar::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 22%, transparent 78%, rgba(0, 0, 0, 0.15));
+  pointer-events: none;
+}
+
+.control-rail > .card {
+  min-width: 0;
+  overflow: hidden;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.2);
 }
 
 .prep-copy + .prep-copy {
@@ -540,12 +608,12 @@ output {
 .grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 
 .panel {
   margin: 0;
-  padding: 12px;
+  padding: 14px;
   border: 1px solid var(--line);
   border-radius: 22px;
   background:
@@ -607,7 +675,103 @@ output {
   border: 1px solid var(--line-strong);
   background:
     linear-gradient(180deg, rgba(5, 11, 18, 0.9), rgba(10, 20, 31, 0.96));
-  min-height: 236px;
+  min-height: var(--slice-view-height);
+}
+
+.panel.is-mesh .slice-shell {
+  min-height: 260px;
+}
+
+.panel.is-mesh canvas {
+  height: 260px;
+  image-rendering: auto;
+  touch-action: none;
+}
+
+.panel.is-mesh .slice-shell::before,
+.panel.is-mesh .slice-shell::after {
+  position: absolute;
+  top: 14px;
+  z-index: 1;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 21, 31, 0.68);
+  color: rgba(241, 248, 252, 0.9);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+.panel.is-mesh .slice-shell::before {
+  content: "LH";
+  left: 14px;
+}
+
+.panel.is-mesh .slice-shell::after {
+  content: "RH";
+  right: 14px;
+}
+
+.interaction-hint {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(161, 197, 216, 0.12);
+}
+
+.panel canvas {
+  cursor: crosshair;
+}
+
+.panel.is-awaiting-pick:not(.is-loading) canvas:hover + .slice-loader,
+.panel.is-awaiting-pick:not(.is-loading) canvas:focus-visible + .slice-loader {
+  opacity: 1;
+  pointer-events: none;
+  color: transparent;
+  background:
+    linear-gradient(180deg, rgba(7, 17, 27, 0.2), rgba(7, 17, 27, 0.2)),
+    rgba(7, 17, 27, 0.2);
+  animation: none;
+}
+
+.panel.is-awaiting-pick:not(.is-loading) canvas:hover + .slice-loader::before,
+.panel.is-awaiting-pick:not(.is-loading) canvas:focus-visible + .slice-loader::before {
+  content: "Click to place a reference voxel";
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 21, 31, 0.86);
+  color: rgba(246, 251, 255, 0.95);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.panel.is-mesh.is-awaiting-pick:not(.is-loading) canvas:hover + .slice-loader::before,
+.panel.is-mesh.is-awaiting-pick:not(.is-loading) canvas:focus-visible + .slice-loader::before {
+  content: "Left-drag to place a reference vertex";
+}
+
+.slice-note {
+  position: absolute;
+  inset: auto 16px 16px 16px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 21, 31, 0.82);
+  color: rgba(241, 248, 252, 0.94);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  text-align: center;
+  pointer-events: none;
+}
+
+.slice-note:not(:empty) {
+  display: flex;
 }
 
 canvas {
@@ -651,30 +815,16 @@ canvas {
     grid-template-columns: 1fr;
   }
 
-  .app-layout {
-    grid-template-columns: 1fr;
+  .viewer-top {
+    grid-template-columns: minmax(0, 1fr) minmax(82px, var(--legend-rail-width));
+  }
+
+  .viewer-bottom {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .control-rail {
-    order: 2;
-  }
-
-  .viewer {
-    order: 1;
-  }
-}
-
-@media (max-width: 1480px) {
-  .viewer-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .viewer-controls {
-    grid-template-columns: 1fr;
-  }
-
-  .viewer-side {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-column: 1 / -1;
   }
 }
 
@@ -710,7 +860,7 @@ canvas {
     grid-template-columns: 1fr;
   }
 
-  .viewer-side {
+  .viewer-bottom {
     grid-template-columns: 1fr;
   }
 
@@ -733,5 +883,47 @@ canvas {
 
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .viewer-top {
+    grid-template-columns: 1fr;
+  }
+
+  .legend-rail {
+    padding-top: 0;
+  }
+
+  .legend-card {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    height: auto;
+    padding: 14px 16px;
+  }
+
+  .legend-title {
+    writing-mode: initial;
+    transform: none;
+    justify-self: start;
+  }
+
+  .legend-scale {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: auto;
+  }
+
+  .legend-scale > .legend-end {
+    position: static;
+    transform: none;
+  }
+
+  .legend-vertical-bar {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 14px;
   }
 }

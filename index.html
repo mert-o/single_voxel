@@ -33,111 +33,111 @@
     </header>
 
     <main class="app-layout">
-      <aside class="control-rail">
-        <section class="card">
-          <div class="card-head">
-            <h2>Image View</h2>
-            <p id="datasetDescription">Loading demo metadata...</p>
-          </div>
-
-          <div class="control-stack">
-            <label class="control-label" for="contrastSlider">Displayed Contrast</label>
-            <div class="contrast-row">
-              <button id="contrastPrevBtn" type="button" class="ghost-btn">Prev</button>
-              <input id="contrastSlider" type="range" min="0" max="0" value="0" />
-              <button id="contrastNextBtn" type="button" class="ghost-btn">Next</button>
-            </div>
-            <p class="detail-line" id="contrastLabel">T1 / MPRAGE · feature dim 343</p>
-          </div>
-
-          <div class="control-stack">
-            <label class="control-label slider-inline" for="zoomSlider">
-              Slice Zoom
-              <input id="zoomSlider" type="range" min="100" max="280" step="5" value="100" />
-            </label>
-            <p class="detail-line">Zoom: <span id="zoomValue">1.0x</span> · mouse wheel over a slice also works.</p>
-          </div>
-
-          <div class="control-stack">
-            <label class="control-label slider-inline" for="alphaSlider">
-              Homology Overlay
-              <input id="alphaSlider" type="range" min="0" max="100" value="86" />
-            </label>
-            <output id="statusText">Loading demo data...</output>
-          </div>
-
-          <button id="resetBtn" type="button" class="primary-btn wide-btn">Clear Reference</button>
-        </section>
-      </aside>
-
       <section class="viewer">
-        <div class="viewer-shell">
-          <div class="viewer-main">
-            <div class="viewer-toolbar">
-              <div>
-                <p class="viewer-kicker">Cross-Subject Homology</p>
-                <h2>Voxel Homology Maps</h2>
-              </div>
-              <p id="selectionSummary"></p>
-            </div>
+        <div class="viewer-toolbar">
+          <div>
+            <p class="viewer-kicker">Cross-Subject Homology</p>
+            <h2>Voxel Homology Maps</h2>
+          </div>
+          <p id="selectionSummary"></p>
+        </div>
 
-            <div class="viewer-controls">
-              <section class="control-strip-card">
-                <div class="control-strip-head">
-                  <h3>Anatomical Focus</h3>
-                  <p>Restrict the homology map and zoom to a selected structure or lesion.</p>
-                </div>
-                <div class="chip-group chip-group-horizontal" id="regionControls"></div>
-              </section>
-
-              <section class="control-strip-card">
-                <div class="control-strip-head">
-                  <h3>Contrast Families</h3>
-                  <p>Choose which MRI contrast families contribute to the voxel homology score.</p>
-                </div>
-                <div class="chip-group chip-group-horizontal" id="similarityControls"></div>
-                <p class="detail-line" id="activeFamiliesText"></p>
-              </section>
-            </div>
-
+        <div class="viewer-top">
+          <div class="brain-stage">
             <section class="grid" id="panelGrid"></section>
           </div>
 
-          <aside class="viewer-side">
-            <section class="side-card score-card">
-              <div class="card-head">
-                <h2>Homology Score</h2>
-                <p>Cosine similarity between the selected reference fingerprint and each candidate voxel.</p>
+          <aside class="legend-rail">
+            <section class="legend-card" aria-label="Similarity color legend">
+              <div class="legend-scale" aria-hidden="true">
+                <span class="legend-end">1</span>
+                <div class="legend-vertical-bar"></div>
+                <span class="legend-end">0</span>
               </div>
-
-              <p class="formula">score = cos(v<sub>ref</sub>, v<sub>voxel</sub>)</p>
-              <p class="metric-copy" id="metricCopy">
-                Brighter overlays indicate a closer match to the chosen reference voxel. When an anatomical focus is active,
-                similarity is restricted to that anatomy only.
-              </p>
-
-              <div class="legend-vertical-wrap" aria-label="Similarity color legend">
-                <div class="legend-vertical-labels" aria-hidden="true">
-                  <span>1.0</span>
-                  <span>0.5</span>
-                  <span>0.0</span>
-                </div>
-                <div class="legend-vertical-bar" aria-hidden="true"></div>
-              </div>
-
-              <p id="pickedText">No reference voxel selected. Click a slice to project voxel homology across subjects.</p>
-            </section>
-
-            <section class="side-card preprocessing-card">
-              <div class="card-head">
-                <h2>Preprocessing</h2>
-                <p>Dataset-specific preparation used before cross-subject homology is evaluated.</p>
-              </div>
-              <p class="prep-copy" id="healthyPrepText"></p>
-              <p class="prep-copy" id="tumorPrepText"></p>
-              <p class="prep-copy" id="deliveryText"></p>
+              <p class="legend-title">Similarity</p>
             </section>
           </aside>
+
+          <aside class="control-rail">
+            <section class="card">
+              <div class="card-head">
+                <h2>Image View</h2>
+                <p id="datasetDescription" hidden></p>
+              </div>
+
+              <div class="control-stack" id="contrastControlStack">
+                <label class="control-label" for="contrastSlider">Displayed Contrast</label>
+                <div class="contrast-row">
+                  <button id="contrastPrevBtn" type="button" class="ghost-btn">Prev</button>
+                  <input id="contrastSlider" type="range" min="0" max="0" value="0" />
+                  <button id="contrastNextBtn" type="button" class="ghost-btn">Next</button>
+                </div>
+                <p class="detail-line" id="contrastLabel">T1 / MPRAGE · feature dim 343</p>
+              </div>
+
+              <div class="control-stack" id="zoomControlStack">
+                <label class="control-label slider-inline" for="zoomSlider">
+                  Slice Zoom
+                  <input id="zoomSlider" type="range" min="100" max="280" step="5" value="100" />
+                </label>
+                <p class="detail-line">Current zoom <span id="zoomValue">1.0x</span></p>
+              </div>
+
+              <div class="control-stack">
+                <label class="control-label slider-inline" for="alphaSlider">
+                  Homology Overlay
+                  <input id="alphaSlider" type="range" min="0" max="100" value="86" />
+                </label>
+                <output id="statusText" hidden></output>
+              </div>
+
+              <button id="resetBtn" type="button" class="primary-btn wide-btn">Clear Reference</button>
+              <p class="detail-line interaction-hint" id="interactionHint"></p>
+            </section>
+          </aside>
+        </div>
+
+        <div class="viewer-bottom">
+          <section class="control-strip-card" id="regionStripCard">
+            <div class="control-strip-head">
+              <h3>Anatomical Focus</h3>
+              <p>Restrict the homology map and zoom to a selected structure or lesion.</p>
+            </div>
+            <div class="chip-group chip-group-horizontal" id="regionControls"></div>
+          </section>
+
+          <section class="control-strip-card" id="similarityStripCard">
+            <div class="control-strip-head">
+              <h3>Contrast Families</h3>
+              <p>Choose which MRI contrast families contribute to the voxel homology score.</p>
+            </div>
+            <div class="chip-group chip-group-horizontal" id="similarityControls"></div>
+            <p class="detail-line" id="activeFamiliesText"></p>
+          </section>
+
+          <section class="side-card score-card">
+            <div class="card-head">
+              <h2>Homology Score</h2>
+              <p>Cosine similarity between the selected reference fingerprint and each candidate voxel.</p>
+            </div>
+
+            <p class="formula">score = cos(v<sub>ref</sub>, v<sub>voxel</sub>)</p>
+            <p class="metric-copy" id="metricCopy">
+              Brighter overlays indicate a closer match to the chosen reference voxel. When an anatomical focus is active,
+              similarity is restricted to that anatomy only.
+            </p>
+            <p id="pickedText">No reference voxel selected. Click a slice to project voxel homology across subjects.</p>
+          </section>
+
+          <section class="side-card preprocessing-card">
+            <div class="card-head">
+              <h2>Preprocessing</h2>
+              <p>Dataset-specific preparation used before cross-subject homology is evaluated.</p>
+            </div>
+            <p class="prep-copy" id="healthyPrepText"></p>
+            <p class="prep-copy" id="tumorPrepText"></p>
+            <p class="prep-copy" id="deliveryText"></p>
+          </section>
         </div>
       </section>
     </main>
@@ -156,6 +156,7 @@
       <div class="slice-shell">
         <canvas width="256" height="256"></canvas>
         <div class="slice-loader" aria-hidden="true">Loading slice...</div>
+        <div class="slice-note" aria-hidden="true"></div>
       </div>
     </article>
   </template>
