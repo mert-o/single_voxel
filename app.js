@@ -6,6 +6,7 @@ const LOCAL_ORBIT_CONTROLS = "./vendor/OrbitControls.js";
 const datasetTabs = document.getElementById("datasetTabs");
 const datasetDescription = document.getElementById("datasetDescription");
 const panelGrid = document.getElementById("panelGrid");
+const viewerTitle = document.getElementById("viewerTitle");
 const panelTemplate = document.getElementById("panelTemplate");
 const statusText = document.getElementById("statusText");
 const pickedText = document.getElementById("pickedText");
@@ -21,6 +22,8 @@ const contrastPrevBtn = document.getElementById("contrastPrevBtn");
 const contrastNextBtn = document.getElementById("contrastNextBtn");
 const contrastControlStack = document.getElementById("contrastControlStack");
 const zoomControlStack = document.getElementById("zoomControlStack");
+const meshSubjectStack = document.getElementById("meshSubjectStack");
+const meshSubjectControls = document.getElementById("meshSubjectControls");
 const interactionHint = document.getElementById("interactionHint");
 const regionStripCard = document.getElementById("regionStripCard");
 const similarityStripCard = document.getElementById("similarityStripCard");
@@ -46,6 +49,9 @@ const state = {
   similarityCache: null,
   dragPicking: null,
   meshLib: null,
+  meshSubjectIndex: 0,
+  meshClickCandidate: null,
+  meshPickedLabel: "",
 };
 
 let layoutSyncFrame = 0;
@@ -79,21 +85,19 @@ function joinUrl(base, path) {
 
 function buildInflatedDisplayCoords(coords, hemi) {
   const out = new Float32Array(coords.length);
-  const flip = hemi === "lh" ? -1 : 1;
-  const depthFlip = hemi === "lh" ? 1 : -1;
   for (let i = 0; i < coords.length; i += 3) {
     const x = coords[i + 0];
     const y = coords[i + 1];
     const z = coords[i + 2];
-    out[i + 0] = flip * y;
+    out[i + 0] = x;
     out[i + 1] = z;
-    out[i + 2] = depthFlip * x;
+    out[i + 2] = -y;
   }
   return out;
 }
 
 function subjectLabel(index) {
-  return `Subject-${index + 1}`;
+  return `Subject ${index + 1}`;
 }
 
 function colorMapViridis(t) {
@@ -213,6 +217,7 @@ function normalizeDtypes(dtypeConfig = {}) {
     color: String(dtypeConfig.color ?? "uint8").toLowerCase(),
     label: String(dtypeConfig.label ?? "uint8").toLowerCase(),
     index: String(dtypeConfig.index ?? "uint16").toLowerCase(),
+    valid: String(dtypeConfig.valid ?? "uint8").toLowerCase(),
   };
 }
 
@@ -353,6 +358,8 @@ function normalizeMetadata(rawMeta) {
       preprocessingSummary: String(dataset.preprocessing_summary ?? dataset.preprocessingSummary ?? ""),
       deliverySummary: String(dataset.delivery_summary ?? dataset.deliverySummary ?? ""),
       interactionHint: String(dataset.interaction_hint ?? dataset.interactionHint ?? ""),
+      parcellation: String(dataset.parcellation ?? ""),
+      annotName: String(dataset.annot_name ?? dataset.annotName ?? ""),
       parcelNames: dataset.parcel_names ?? dataset.parcelNames ?? null,
       displayT1AtFeature: Number.isFinite(dataset.display_t1_at_feature ?? dataset.displayT1AtFeature)
         ? Number(dataset.display_t1_at_feature ?? dataset.displayT1AtFeature)
@@ -541,12 +548,16 @@ async function loadCortexSubjectPreview(datasetMeta, subjectMeta, baseDir) {
     ["lh", "rh"].map(async (hemi) => {
       const hemiMeta = manifest.hemis[hemi];
       const files = hemiMeta.files;
-      const [coords, faces, colors, labels, fullToSample] = await Promise.all([
+      const validPromise = files.valid
+        ? loadTypedArray(joinUrl(manifestDir, files.valid), datasetMeta.dtype.valid, hemiMeta.vertex_count)
+        : Promise.resolve(new Uint8Array(hemiMeta.vertex_count).fill(1));
+      const [coords, faces, colors, labels, fullToSample, validMask] = await Promise.all([
         loadTypedArray(joinUrl(manifestDir, files.coords), datasetMeta.dtype.coords, hemiMeta.vertex_count * 3),
         loadTypedArray(joinUrl(manifestDir, files.faces), datasetMeta.dtype.faces, hemiMeta.face_count * 3),
         loadTypedArray(joinUrl(manifestDir, files.colors), datasetMeta.dtype.color, hemiMeta.vertex_count * 3),
         loadTypedArray(joinUrl(manifestDir, files.labels), datasetMeta.dtype.label, hemiMeta.vertex_count),
         loadTypedArray(joinUrl(manifestDir, files.full_to_sample), datasetMeta.dtype.index, hemiMeta.vertex_count),
+        validPromise,
       ]);
 
       hemis[hemi] = {
@@ -560,6 +571,7 @@ async function loadCortexSubjectPreview(datasetMeta, subjectMeta, baseDir) {
         colors,
         labels,
         fullToSample,
+        validMask,
         sampleFeatures: null,
         baseColors: new Uint8Array(colors),
       };
@@ -568,6 +580,10 @@ async function loadCortexSubjectPreview(datasetMeta, subjectMeta, baseDir) {
 
   return {
     name: subjectMeta.name,
+    parcellation: manifest.parcellation ?? "destrieux",
+    annotName: manifest.annot_name ?? "aparc.a2009s",
+    normalizationMode: manifest.normalization_mode ?? "",
+    blockWeightMode: manifest.block_weight_mode ?? "",
     hemis,
     meshReady: true,
     featuresReady: false,
@@ -646,6 +662,20 @@ function getParcelLabel(dataset, hemi, label) {
     return label >= 0 ? `parcel ${label}` : "unlabeled";
   }
   return dataset.meta.parcelNames[`${hemi}:${label}`] ?? `parcel ${label}`;
+}
+
+function formatParcellationName(datasetMeta) {
+  const parcellation = datasetMeta?.parcellation || "destrieux";
+  if (parcellation.toLowerCase() === "destrieux") {
+    return "Destrieux";
+  }
+  if (parcellation.toLowerCase() === "desikan") {
+    return "Desikan-Killiany";
+  }
+  if (parcellation.toLowerCase() === "brodmann") {
+    return "Brodmann";
+  }
+  return parcellation.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function getDisplayOption(datasetMeta) {
@@ -797,6 +827,23 @@ function drawRegionOutline(ctx, regionInfo, width) {
   ctx.restore();
 }
 
+function drawRegionFill(ctx, regionInfo, color = [255, 80, 70], alpha = 0.18) {
+  if (!regionInfo?.pixels?.length) {
+    return;
+  }
+
+  // Blend one flat color into the selected mask pixels.
+  const image = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  for (let i = 0; i < regionInfo.pixels.length; i++) {
+    const base = regionInfo.pixels[i] * 4;
+    image.data[base + 0] = Math.round(image.data[base + 0] * (1 - alpha) + color[0] * alpha);
+    image.data[base + 1] = Math.round(image.data[base + 1] * (1 - alpha) + color[1] * alpha);
+    image.data[base + 2] = Math.round(image.data[base + 2] * (1 - alpha) + color[2] * alpha);
+    image.data[base + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+}
+
 function drawOverlay(ctx, pixels, sims, alpha) {
   if (!pixels.length || !sims.length) {
     return;
@@ -934,8 +981,19 @@ function syncLegendSizing() {
   });
 }
 
-function getMeshSelectionText(dataset, panel, hemi, label) {
-  return `${subjectLabel(panel.idx)} · ${hemi.toUpperCase()} · ${getParcelLabel(dataset, hemi, label)}`;
+function getMeshSelectionText(dataset, hemi, label, suffix = "") {
+  return `Picked parcel: ${hemi.toUpperCase()} ${getParcelLabel(dataset, hemi, label)}${suffix}`;
+}
+
+function meshPickedText() {
+  if (state.meshPickedLabel) {
+    return state.meshPickedLabel;
+  }
+  const dataset = getActiveDataset();
+  if (!dataset || !state.selected || state.selected.datasetId !== state.datasetId || state.selected.kind !== "mesh") {
+    return "";
+  }
+  return getMeshSelectionText(dataset, state.selected.hemi, state.selected.label);
 }
 
 function buildMeshReferenceVector(subject, hemi, sampleIndex, channelIndices) {
@@ -1015,6 +1073,13 @@ function updateMeshColors(panel, similarityEntry) {
     }
     for (let vertexIdx = 0; vertexIdx < hemiData.vertexCount; vertexIdx++) {
       const sampleIdx = hemiData.fullToSample[vertexIdx];
+      if (!hemiData.validMask[vertexIdx] || sampleIdx >= sims.length) {
+        const baseOffset = vertexIdx * 3;
+        colorArray[baseOffset + 0] = baseColors[baseOffset + 0];
+        colorArray[baseOffset + 1] = baseColors[baseOffset + 1];
+        colorArray[baseOffset + 2] = baseColors[baseOffset + 2];
+        continue;
+      }
       const sim = sims[sampleIdx];
       const [r, g, b] = colorMapViridis(clamp01(sim));
       const baseOffset = vertexIdx * 3;
@@ -1049,7 +1114,6 @@ function syncMeshMarker(panel) {
     positionAttr.array[i3 + 2]
   );
   marker.position.add(hemiRuntime.mesh.position);
-  marker.position.add(panel.meshRuntime.group.position);
   marker.visible = true;
 }
 
@@ -1062,8 +1126,8 @@ function renderMeshPanel(panel, similarityEntry) {
   updateMeshColors(panel, similarityEntry);
   syncMeshMarker(panel);
 
-  panel.title.textContent = subjectLabel(panel.idx);
-  panel.meta.textContent = "Inflated LH / RH lateral view";
+  panel.title.textContent = "Cortical Surface";
+  panel.meta.textContent = `${panel.subject.name ?? subjectLabel(panel.idx)} · inflated 3D mesh`;
 
   const isReference =
     state.selected &&
@@ -1090,13 +1154,21 @@ function renderMeshPanel(panel, similarityEntry) {
     "is-awaiting-pick",
     !hasActiveReference() && dataset.featuresReadyCount >= dataset.featuresTotal
   );
-  panel.note.textContent = panel.subject.featuresReady ? "Left-drag to scrub · Right-drag to orbit" : `Loading features ${featureProgressText(dataset)}`;
+  const pickedLabel = meshPickedText();
+  panel.node.classList.toggle("has-picked-parcel", Boolean(pickedLabel));
+  panel.note.innerHTML = panel.subject.featuresReady
+    ? `<span class="mesh-picked-note">${pickedLabel}</span><span class="mesh-help-note">Drag to rotate · wheel to zoom · click cortex to pick</span>`
+    : `<span class="mesh-help-note">Loading features ${featureProgressText(dataset)}</span>`;
 
   const rect = panel.canvas.getBoundingClientRect();
-  const width = Math.max(1, Math.round(rect.width * Math.min(window.devicePixelRatio || 1, 2)));
-  const height = Math.max(1, Math.round(rect.height * Math.min(window.devicePixelRatio || 1, 2)));
-  if (panel.meshRuntime.renderer.domElement.width !== width || panel.meshRuntime.renderer.domElement.height !== height) {
-    panel.meshRuntime.renderer.setSize(rect.width, rect.height, false);
+  const width = Math.max(1, rect.width);
+  const height = Math.max(1, rect.height);
+  const widthChanged = Math.abs((panel.meshRuntime.canvasCssWidth ?? 0) - width) > 0.5;
+  const heightChanged = Math.abs((panel.meshRuntime.canvasCssHeight ?? 0) - height) > 0.5;
+  if (widthChanged || heightChanged) {
+    panel.meshRuntime.renderer.setSize(width, height, false);
+    panel.meshRuntime.canvasCssWidth = width;
+    panel.meshRuntime.canvasCssHeight = height;
     fitMeshCamera(panel);
   }
   panel.meshRuntime.renderer.render(panel.meshRuntime.scene, panel.meshRuntime.camera);
@@ -1110,6 +1182,93 @@ function requestPanelRender(panel) {
   panel.meshRuntime.frameHandle = requestAnimationFrame(() =>
     renderMeshPanel(panel, state.similarityCache?.perPanel?.[panel.idx] ?? null)
   );
+}
+
+function rotateMeshPanel(panel, dx, dy) {
+  const runtime = panel.meshRuntime;
+  if (!runtime) {
+    return;
+  }
+
+  // Rotate the centered brain group directly. This keeps the behavior simple.
+  runtime.group.rotation.y += dx * 0.008;
+  runtime.group.rotation.x += dy * 0.008;
+  runtime.group.rotation.x = clamp(runtime.group.rotation.x, -Math.PI * 0.48, Math.PI * 0.48);
+  requestPanelRender(panel);
+}
+
+function zoomMeshPanel(panel, deltaY) {
+  const runtime = panel.meshRuntime;
+  if (!runtime) {
+    return;
+  }
+
+  // Move the camera toward or away from the fixed orbit target.
+  const target = runtime.orbitTarget ?? runtime.controls.target;
+  const offset = runtime.camera.position.clone().sub(target);
+  const oldDistance = offset.length();
+  const scale = deltaY < 0 ? 0.88 : 1.12;
+  const newDistance = clamp(
+    oldDistance * scale,
+    runtime.minCameraDistance ?? oldDistance * 0.35,
+    runtime.maxCameraDistance ?? oldDistance * 3.0
+  );
+  offset.setLength(newDistance);
+  runtime.camera.position.copy(target).add(offset);
+  runtime.camera.lookAt(target);
+  requestPanelRender(panel);
+}
+
+function addRaisedBoundaryPoint(values, coords, vertexIndex, center, lift) {
+  const i3 = vertexIndex * 3;
+  const x = coords[i3 + 0];
+  const y = coords[i3 + 1];
+  const z = coords[i3 + 2];
+  const dx = x - center.x;
+  const dy = y - center.y;
+  const dz = z - center.z;
+  const length = Math.hypot(dx, dy, dz) || 1;
+
+  // Lift the line just above the surface to avoid flickering against triangles.
+  values.push(x + (dx / length) * lift, y + (dy / length) * lift, z + (dz / length) * lift);
+}
+
+function buildParcelBoundaryPositions(hemiData, center) {
+  const coords = hemiData.displayCoords ?? hemiData.coords;
+  const faces = hemiData.faces;
+  const labels = hemiData.labels;
+  const values = [];
+  const seenEdges = new Set();
+  const lift = 0.35;
+
+  const addEdge = (a, b) => {
+    if (labels[a] === labels[b]) {
+      return;
+    }
+
+    // Store each mesh edge once, even though it belongs to two triangles.
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    const key = lo * hemiData.vertexCount + hi;
+    if (seenEdges.has(key)) {
+      return;
+    }
+    seenEdges.add(key);
+
+    addRaisedBoundaryPoint(values, coords, a, center, lift);
+    addRaisedBoundaryPoint(values, coords, b, center, lift);
+  };
+
+  for (let i = 0; i < faces.length; i += 3) {
+    const a = faces[i + 0];
+    const b = faces[i + 1];
+    const c = faces[i + 2];
+    addEdge(a, b);
+    addEdge(b, c);
+    addEdge(c, a);
+  }
+
+  return new Float32Array(values);
 }
 
 function resolveMeshVertexFromHit(intersection, mesh) {
@@ -1157,6 +1316,16 @@ function pickMeshReference(event, panel) {
   const sampleIndex = hemiData.fullToSample[fullVertexIndex];
   const label = hemiData.labels[fullVertexIndex];
 
+  if (!hemiData.validMask[fullVertexIndex] || sampleIndex >= hemiData.sampleCount) {
+    state.selected = null;
+    state.meshPickedLabel = getMeshSelectionText(dataset, hemi, label, " (not sampled)");
+    invalidateSimilarityCache();
+    pickedText.textContent = "";
+    statusText.textContent = "That parcel is outside the sampled ribbon slab.";
+    renderPanels();
+    return false;
+  }
+
   state.selected = {
     datasetId: state.datasetId,
     subjectIndex: panel.idx,
@@ -1166,8 +1335,9 @@ function pickMeshReference(event, panel) {
     sampleIndex,
     label,
   };
+  state.meshPickedLabel = getMeshSelectionText(dataset, hemi, label);
   invalidateSimilarityCache();
-  pickedText.textContent = getMeshSelectionText(dataset, panel, hemi, label);
+  pickedText.textContent = "";
   statusText.textContent = "Computing cortical similarity maps...";
   renderPanels();
   return true;
@@ -1282,6 +1452,7 @@ function renderPanel(panel, similarityEntry) {
   const visible = getSubjectDisplayImage(subject, displayOption);
   const focusInfo = getActiveMaskInfo(subject);
   const isRegionMode = Boolean(state.activeRegionId);
+  const isCorticalRibbonMode = state.activeRegionId === "cortical_ribbon";
   const isReference =
     state.selected &&
     state.selected.datasetId === state.datasetId &&
@@ -1305,7 +1476,9 @@ function renderPanel(panel, similarityEntry) {
   if (similarityEntry?.sims?.length) {
     drawOverlay(bufferCtx, similarityEntry.pixelInfo.pixels, similarityEntry.sims, state.alpha);
   }
-  if (isRegionMode && focusInfo.pixels.length) {
+  if (isRegionMode && isCorticalRibbonMode && focusInfo.pixels.length) {
+    drawRegionFill(bufferCtx, focusInfo);
+  } else if (isRegionMode && focusInfo.pixels.length) {
     drawRegionOutline(bufferCtx, focusInfo, subject.width);
   }
 
@@ -1383,9 +1556,13 @@ function renderPanels() {
 
 function showLoadingPanels(datasetMeta) {
   panelGrid.innerHTML = "";
+  panelGrid.classList.toggle("is-single-mesh", datasetMeta.viewerKind === "mesh");
   state.panels = [];
 
-  datasetMeta.subjects.forEach((subject, idx) => {
+  const loadingSubjects =
+    datasetMeta.viewerKind === "mesh" ? datasetMeta.subjects.slice(0, 1) : datasetMeta.subjects;
+
+  loadingSubjects.forEach((subject, idx) => {
     const node = panelTemplate.content.firstElementChild.cloneNode(true);
     const canvas = node.querySelector("canvas");
     const title = node.querySelector(".panel-title");
@@ -1393,11 +1570,11 @@ function showLoadingPanels(datasetMeta) {
     const badge = node.querySelector(".panel-badge");
     const note = node.querySelector(".slice-note");
     node.classList.add("is-loading");
-    canvas.width = datasetMeta.width;
-    canvas.height = datasetMeta.height;
-    title.textContent = subjectLabel(idx);
-    meta.textContent = "Loading preview slice...";
-    badge.textContent = "Preview loading";
+    canvas.width = datasetMeta.viewerKind === "mesh" ? 1200 : datasetMeta.width;
+    canvas.height = datasetMeta.viewerKind === "mesh" ? 640 : datasetMeta.height;
+    title.textContent = datasetMeta.viewerKind === "mesh" ? "Cortical Surface" : subjectLabel(idx);
+    meta.textContent = datasetMeta.viewerKind === "mesh" ? "Loading inflated 3D mesh..." : "Loading preview slice...";
+    badge.textContent = datasetMeta.viewerKind === "mesh" ? "Loading" : "Preview loading";
     panelGrid.appendChild(node);
     state.panels.push({
       node,
@@ -1408,7 +1585,7 @@ function showLoadingPanels(datasetMeta) {
       note,
       bufferCanvas: null,
       subject: null,
-      idx,
+      idx: datasetMeta.viewerKind === "mesh" ? state.meshSubjectIndex : idx,
       viewState: null,
     });
   });
@@ -1426,6 +1603,8 @@ function disposePanelRuntime(panel) {
   for (const hemi of ["lh", "rh"]) {
     panel.meshRuntime.hemis?.[hemi]?.geometry?.dispose();
     panel.meshRuntime.hemis?.[hemi]?.material?.dispose();
+    panel.meshRuntime.hemis?.[hemi]?.boundaryGeometry?.dispose();
+    panel.meshRuntime.hemis?.[hemi]?.boundaryMaterial?.dispose();
   }
   panel.meshRuntime.selectionMarker?.geometry?.dispose();
   panel.meshRuntime.selectionMarker?.material?.dispose();
@@ -1438,6 +1617,13 @@ function fitMeshCamera(panel) {
     return;
   }
 
+  if (!runtime.hasInitialPose) {
+    // Start from a lateral view, with a small top tilt so the surface reads as 3D.
+    runtime.group.rotation.x = -0.22;
+    runtime.group.rotation.y = Math.PI / 2;
+    runtime.hasInitialPose = true;
+  }
+
   const rect = panel.canvas.getBoundingClientRect();
   const aspect = Math.max(1e-3, rect.width / Math.max(rect.height, 1));
   const box = new runtime.THREE.Box3().setFromObject(runtime.group);
@@ -1448,18 +1634,21 @@ function fitMeshCamera(panel) {
   const fov = (runtime.camera.fov * Math.PI) / 180;
   const distY = halfY / Math.tan(fov / 2);
   const distX = halfX / (aspect * Math.tan(fov / 2));
-  const distance = Math.max(distX, distY, size.z * 1.6) * 1.08;
+  const distance = Math.max(distX, distY, size.z * 0.75) * 1.38;
 
   runtime.camera.aspect = aspect;
   runtime.camera.near = Math.max(0.1, distance * 0.1);
   runtime.camera.far = distance * 6 + size.z * 3;
-  runtime.camera.position.set(center.x, center.y, center.z + distance);
+  runtime.camera.position.set(center.x + distance * 0.18, center.y + distance * 0.1, center.z + distance);
   runtime.camera.lookAt(center);
   runtime.camera.updateProjectionMatrix();
 
+  runtime.orbitTarget = center.clone();
+  runtime.minCameraDistance = distance * 0.45;
+  runtime.maxCameraDistance = distance * 3.0;
   runtime.controls.target.copy(center);
-  runtime.controls.minDistance = distance * 0.55;
-  runtime.controls.maxDistance = distance * 2.2;
+  runtime.controls.minDistance = runtime.minCameraDistance;
+  runtime.controls.maxDistance = runtime.maxCameraDistance;
   runtime.controls.update();
 }
 
@@ -1468,13 +1657,22 @@ async function initializeMeshPanel(panel) {
   const renderer = new THREE.WebGLRenderer({ canvas: panel.canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 2000);
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 2000);
   const controls = new OrbitControls(camera, panel.canvas);
   controls.enablePan = false;
   controls.enableDamping = false;
-  controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+  controls.enabled = false;
+  controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
   controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
   controls.touches.ONE = THREE.TOUCH.ROTATE;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+  keyLight.position.set(0.2, 0.3, 1.0);
+  scene.add(keyLight);
+  const fillLight = new THREE.DirectionalLight(0xd7f7ff, 0.45);
+  fillLight.position.set(-0.6, 0.1, 0.6);
+  scene.add(fillLight);
 
   const hemis = {};
   const group = new THREE.Group();
@@ -1488,18 +1686,40 @@ async function initializeMeshPanel(panel) {
     const colorAttr = new THREE.Uint8BufferAttribute(new Uint8Array(hemiData.baseColors), 3, true);
     geometry.setAttribute("color", colorAttr);
     geometry.setIndex(new THREE.BufferAttribute(hemiData.faces, 1));
-    const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    geometry.computeVertexNormals();
+    const material = new THREE.MeshPhongMaterial({
+      vertexColors: true,
+      side: THREE.FrontSide,
+      shininess: 18,
+      specular: 0x26313a,
+    });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.userData.hemi = hemi;
 
     const box = new THREE.Box3().setFromBufferAttribute(geometry.getAttribute("position"));
     const center = box.getCenter(new THREE.Vector3());
+    const boundaryGeometry = new THREE.BufferGeometry();
+    boundaryGeometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(buildParcelBoundaryPositions(hemiData, center), 3)
+    );
+    const boundaryMaterial = new THREE.LineBasicMaterial({
+      color: 0x061019,
+      transparent: true,
+      opacity: 0.74,
+      depthTest: true,
+      depthWrite: false,
+    });
+    const boundaryLine = new THREE.LineSegments(boundaryGeometry, boundaryMaterial);
+    boundaryLine.renderOrder = 3;
+
     group.add(mesh);
+    group.add(boundaryLine);
     layout[hemi] = {
       center,
       size: box.getSize(new THREE.Vector3()),
     };
-    hemis[hemi] = { mesh, geometry, material, colorAttr };
+    hemis[hemi] = { mesh, geometry, material, colorAttr, boundaryLine, boundaryGeometry, boundaryMaterial };
   }
 
   const gap = Math.max(layout.lh.size.x, layout.rh.size.x) * 0.16;
@@ -1510,6 +1730,7 @@ async function initializeMeshPanel(panel) {
   for (const hemi of ["lh", "rh"]) {
     const { center } = layout[hemi];
     hemis[hemi].mesh.position.set(xOffsets[hemi] - center.x, -center.y, -center.z);
+    hemis[hemi].boundaryLine.position.copy(hemis[hemi].mesh.position);
   }
 
   const marker = new THREE.Mesh(
@@ -1517,7 +1738,7 @@ async function initializeMeshPanel(panel) {
     new THREE.MeshBasicMaterial({ color: 0xff7446 })
   );
   marker.visible = false;
-  scene.add(marker);
+  group.add(marker);
 
   const groupBox = new THREE.Box3().setFromObject(group);
   const center = groupBox.getCenter(new THREE.Vector3());
@@ -1533,6 +1754,12 @@ async function initializeMeshPanel(panel) {
     group,
     hemis,
     selectionMarker: marker,
+    orbitTarget: new THREE.Vector3(),
+    minCameraDistance: 1,
+    maxCameraDistance: 2000,
+    hasInitialPose: false,
+    canvasCssWidth: 0,
+    canvasCssHeight: 0,
     frameHandle: 0,
   };
 
@@ -1544,11 +1771,20 @@ async function buildPanels(dataset) {
     disposePanelRuntime(panel);
   }
   panelGrid.innerHTML = "";
+  panelGrid.classList.toggle("is-single-mesh", dataset.meta.viewerKind === "mesh");
   state.panels = [];
 
-  dataset.subjects.forEach((subject, idx) => {
+  const meshSubjectIndex = clamp(state.meshSubjectIndex, 0, dataset.subjects.length - 1);
+  state.meshSubjectIndex = meshSubjectIndex;
+  const visibleSubjects =
+    dataset.meta.viewerKind === "mesh"
+      ? [{ subject: dataset.subjects[meshSubjectIndex], idx: meshSubjectIndex }]
+      : dataset.subjects.map((subject, idx) => ({ subject, idx }));
+
+  visibleSubjects.forEach(({ subject, idx }) => {
     const node = panelTemplate.content.firstElementChild.cloneNode(true);
     const canvas = node.querySelector("canvas");
+    const shell = node.querySelector(".slice-shell");
     const title = node.querySelector(".panel-title");
     const meta = node.querySelector(".panel-meta");
     const badge = node.querySelector(".panel-badge");
@@ -1559,24 +1795,25 @@ async function buildPanels(dataset) {
       bufferCanvas.height = subject.height;
     }
     if (dataset.meta.viewerKind === "mesh") {
-      canvas.width = 720;
-      canvas.height = 260;
+      canvas.width = 1200;
+      canvas.height = 640;
     } else {
       canvas.width = subject.width;
       canvas.height = subject.height;
     }
     title.textContent = subjectLabel(idx);
-    meta.textContent = dataset.meta.viewerKind === "mesh" ? "Inflated LH / RH lateral view" : `Axial slice z=${subject.slice}`;
+    meta.textContent = dataset.meta.viewerKind === "mesh" ? "Inflated 3D mesh" : `Axial slice z=${subject.slice}`;
     badge.textContent = dataset.meta.viewerKind === "mesh" ? "Parcellation" : "Preview";
-    canvas.style.cursor = dataset.meta.viewerKind === "mesh" ? "crosshair" : "crosshair";
+    canvas.style.cursor = dataset.meta.viewerKind === "mesh" ? "grab" : "crosshair";
     canvas.title =
       dataset.meta.viewerKind === "mesh"
-        ? "Left-drag to scrub a reference vertex. Right-drag to orbit. Wheel to zoom."
+        ? "Drag to rotate. Wheel to zoom. Click cortex to pick."
         : "Drag to scrub a reference voxel";
 
     const panel = {
       node,
       canvas,
+      shell,
       title,
       meta,
       badge,
@@ -1589,8 +1826,17 @@ async function buildPanels(dataset) {
     };
 
     if (dataset.meta.viewerKind === "mesh") {
+      const handleMeshWheel = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+        zoomMeshPanel(panel, delta);
+      };
       canvas.addEventListener("pointerdown", (event) => handlePanelPointerDown(event, panel));
       canvas.addEventListener("pointermove", (event) => handlePanelPointerMove(event, panel));
+      canvas.addEventListener("pointerup", (event) => handlePanelPointerUp(event, panel));
+      canvas.addEventListener("pointercancel", (event) => handlePanelPointerUp(event, panel));
+      node.addEventListener("wheel", handleMeshWheel, { passive: false, capture: true });
       canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     } else {
       canvas.addEventListener("pointerdown", (event) => handlePanelPointerDown(event, panel));
@@ -1666,9 +1912,10 @@ function pickSliceReference(panel, coords) {
 
 function clearSelection(statusOverride = null) {
   state.selected = null;
+  state.meshPickedLabel = "";
   invalidateSimilarityCache();
   pickedText.textContent = isMeshDataset()
-    ? "No reference vertex selected. Left-drag over a cortical mesh to project similarity across subjects."
+    ? ""
     : "No reference voxel selected. Drag or click a slice to project voxel homology across subjects.";
   if (statusOverride) {
     statusText.textContent = statusOverride;
@@ -1684,6 +1931,23 @@ function handlePanelPointerDown(event, panel) {
   if (event.button !== 0) {
     return;
   }
+
+  if (dataset.meta.viewerKind === "mesh") {
+    event.preventDefault();
+    state.meshClickCandidate = {
+      panelIdx: panel.idx,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      moved: false,
+    };
+    panel.canvas.setPointerCapture?.(event.pointerId);
+    panel.canvas.style.cursor = "grabbing";
+    return;
+  }
+
   if (dataset.featuresReadyCount < dataset.featuresTotal) {
     statusText.textContent = loadingStatusText(dataset, "Feature data still loading");
     return;
@@ -1691,17 +1955,34 @@ function handlePanelPointerDown(event, panel) {
 
   state.dragPicking = { panelIdx: panel.idx, pointerId: event.pointerId };
   panel.canvas.setPointerCapture?.(event.pointerId);
-  if (dataset.meta.viewerKind === "mesh") {
-    pickMeshReference(event, panel);
-  } else {
-    const coords = getCanvasPixel(event, panel);
-    if (coords) {
-      pickSliceReference(panel, coords);
-    }
+  const coords = getCanvasPixel(event, panel);
+  if (coords) {
+    pickSliceReference(panel, coords);
   }
 }
 
 function handlePanelPointerMove(event, panel) {
+  const dataset = getActiveDataset();
+  if (dataset?.meta.viewerKind === "mesh") {
+    const candidate = state.meshClickCandidate;
+    if (candidate && candidate.panelIdx === panel.idx && candidate.pointerId === event.pointerId) {
+      event.preventDefault();
+      const totalDx = event.clientX - candidate.startX;
+      const totalDy = event.clientY - candidate.startY;
+      const stepDx = event.clientX - candidate.lastX;
+      const stepDy = event.clientY - candidate.lastY;
+      candidate.lastX = event.clientX;
+      candidate.lastY = event.clientY;
+      if (Math.hypot(totalDx, totalDy) > 4) {
+        candidate.moved = true;
+      }
+      if (event.buttons & 1) {
+        rotateMeshPanel(panel, stepDx, stepDy);
+      }
+    }
+    return;
+  }
+
   if (
     !state.dragPicking ||
     state.dragPicking.panelIdx !== panel.idx ||
@@ -1711,12 +1992,7 @@ function handlePanelPointerMove(event, panel) {
     return;
   }
 
-  const dataset = getActiveDataset();
   if (!dataset) {
-    return;
-  }
-  if (dataset.meta.viewerKind === "mesh") {
-    pickMeshReference(event, panel);
     return;
   }
 
@@ -1726,9 +2002,33 @@ function handlePanelPointerMove(event, panel) {
   }
 }
 
+function handlePanelPointerUp(event, panel) {
+  const dataset = getActiveDataset();
+  if (dataset?.meta.viewerKind !== "mesh") {
+    state.dragPicking = null;
+    return;
+  }
+
+  const candidate = state.meshClickCandidate;
+  if (!candidate || candidate.panelIdx !== panel.idx || candidate.pointerId !== event.pointerId) {
+    return;
+  }
+
+  panel.canvas.releasePointerCapture?.(event.pointerId);
+  panel.canvas.style.cursor = "grab";
+  state.meshClickCandidate = null;
+  if (!candidate.moved) {
+    pickMeshReference(event, panel);
+  }
+}
+
 function updateSelectionSummary() {
   const dataset = getActiveDataset();
   if (!dataset) {
+    selectionSummary.textContent = "";
+    return;
+  }
+  if (dataset.meta.viewerKind === "mesh") {
     selectionSummary.textContent = "";
     return;
   }
@@ -1766,6 +2066,10 @@ function updateStats() {
 
   featureCount.textContent = String(dataset.meta.featureDim);
   datasetDescription.textContent = dataset.meta.description;
+  viewerTitle.textContent =
+    dataset.meta.viewerKind === "mesh"
+      ? `Homology Maps / ${formatParcellationName(dataset.meta)} Parcellation`
+      : "Voxel Homology Maps";
   activeFamiliesText.textContent = `${state.activeSimilarityGroups.size} of ${
     dataset.meta.similarityGroups.length
   } contrast families active.`;
@@ -1773,7 +2077,7 @@ function updateStats() {
   interactionHint.textContent =
     dataset.meta.interactionHint ||
     (dataset.meta.viewerKind === "mesh"
-      ? "Left-drag to scrub a reference vertex. Right-drag to orbit. Use the mouse wheel to zoom."
+      ? "Drag the 3D cortex to rotate it. Wheel to zoom. Click once to pick a cortical parcel."
       : "Drag across any subject slice to scrub the reference voxel continuously.");
 
   if (dataset.meta.id === "healthy") {
@@ -1796,8 +2100,12 @@ function updateStats() {
   const isMesh = dataset.meta.viewerKind === "mesh";
   contrastControlStack.hidden = isMesh;
   zoomControlStack.hidden = isMesh;
+  meshSubjectStack.hidden = !isMesh;
   regionStripCard.hidden = isMesh || dataset.meta.regions.length === 0;
   similarityStripCard.hidden = dataset.meta.similarityGroups.length === 0;
+  if (isMesh) {
+    renderMeshSubjectControls();
+  }
 }
 
 function renderRegionControls() {
@@ -1878,9 +2186,46 @@ function renderSimilarityControls() {
   }
 }
 
+function renderMeshSubjectControls() {
+  const dataset = getActiveDataset();
+  meshSubjectControls.innerHTML = "";
+  if (!dataset || dataset.meta.viewerKind !== "mesh") {
+    return;
+  }
+
+  dataset.subjects.forEach((subject, idx) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "chip";
+    button.textContent = subjectLabel(idx);
+    button.title = subject.name ?? subjectLabel(idx);
+    button.classList.toggle("is-active", idx === state.meshSubjectIndex);
+    button.addEventListener("click", async () => {
+      if (idx === state.meshSubjectIndex) {
+        return;
+      }
+      state.meshSubjectIndex = idx;
+      await buildPanels(dataset);
+      renderMeshSubjectControls();
+      updateSelectionSummary();
+      updateStats();
+    });
+    meshSubjectControls.appendChild(button);
+  });
+}
+
 function renderDatasetTabs() {
   datasetTabs.innerHTML = "";
-  for (const dataset of state.meta.datasets) {
+  const tabOrder = new Map([
+    ["healthy", 0],
+    ["tumor", 1],
+    ["cortex", 2],
+  ]);
+  const datasets = [...state.meta.datasets].sort(
+    (a, b) => (tabOrder.get(a.id) ?? 99) - (tabOrder.get(b.id) ?? 99)
+  );
+
+  for (const dataset of datasets) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "dataset-tab";
@@ -2025,7 +2370,7 @@ function startFeatureLoading(dataset) {
           } else {
             statusText.textContent =
               dataset.meta.viewerKind === "mesh"
-                ? "Left-drag any cortical mesh to choose a reference vertex."
+                ? "Drag the cortex to rotate it. Click one cortical parcel to choose a reference."
                 : "Drag any subject panel to choose a reference voxel.";
           }
         }
@@ -2048,12 +2393,15 @@ function resetForDataset(dataset) {
   state.activeRegionId = null;
   state.selected = null;
   state.similarityCache = null;
+  state.meshSubjectIndex = 0;
+  state.meshClickCandidate = null;
+  state.meshPickedLabel = "";
   state.activeSimilarityGroups = new Set(dataset.meta.similarityGroups.map((group) => group.id));
   state.displayIndex = findDisplayIndex(dataset.meta, dataset.meta.defaultDisplay);
   state.zoom = 1;
   pickedText.textContent =
     dataset.meta.viewerKind === "mesh"
-      ? "No reference vertex selected. Left-drag any cortical mesh to project similarity across subjects."
+      ? ""
       : "No reference voxel selected. Drag or click a slice to project voxel homology across subjects.";
 }
 
@@ -2097,7 +2445,7 @@ async function activateDataset(datasetId) {
   } else {
     statusText.textContent =
       dataset.meta.viewerKind === "mesh"
-        ? "Left-drag any cortical mesh to choose a reference vertex."
+        ? "Drag the cortex to rotate it. Click one cortical parcel to choose a reference."
         : "Drag any subject panel to choose a reference voxel.";
   }
 }

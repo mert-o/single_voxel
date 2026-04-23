@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Cross Subject Single Voxel Homology</title>
+  <title>Cross Subject Surface Homology</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=mesh-outline-wheel-20260423" />
 </head>
 <body>
   <div class="page-shell">
     <header class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">Interactive Voxel Fingerprint Demo</p>
+        <p class="eyebrow">Interactive Voxel Signature Demo</p>
         <h1>Cross Subject Single Voxel Homology</h1>
         <p class="hero-lede">
           Select one reference voxel, focus on a deep gray structure or lesion, and inspect
-          how its multi-contrast fingerprint maps across subjects.
+          how its multi-contrast signature maps across subjects.
         </p>
       </div>
 
@@ -37,7 +37,7 @@
         <div class="viewer-toolbar">
           <div>
             <p class="viewer-kicker">Cross-Subject Homology</p>
-            <h2>Voxel Homology Maps</h2>
+            <h2 id="viewerTitle">Homology Maps / Destrieux Parcellation</h2>
           </div>
           <p id="selectionSummary"></p>
         </div>
@@ -61,7 +61,7 @@
           <aside class="control-rail">
             <section class="card">
               <div class="card-head">
-                <h2>Image View</h2>
+                <h2>View</h2>
                 <p id="datasetDescription" hidden></p>
               </div>
 
@@ -81,6 +81,11 @@
                   <input id="zoomSlider" type="range" min="100" max="280" step="5" value="100" />
                 </label>
                 <p class="detail-line">Current zoom <span id="zoomValue">1.0x</span></p>
+              </div>
+
+              <div class="control-stack" id="meshSubjectStack" hidden>
+                <label class="control-label">Displayed Subject</label>
+                <div class="chip-group" id="meshSubjectControls"></div>
               </div>
 
               <div class="control-stack">
@@ -118,7 +123,7 @@
           <section class="side-card score-card">
             <div class="card-head">
               <h2>Homology Score</h2>
-              <p>Cosine similarity between the selected reference fingerprint and each candidate voxel.</p>
+              <p>Cosine similarity between the selected reference signature and each candidate voxel.</p>
             </div>
 
             <p class="formula">score = cos(v<sub>ref</sub>, v<sub>voxel</sub>)</p>
@@ -161,6 +166,6 @@
     </article>
   </template>
 
-  <script src="./app.js" type="module"></script>
+  <script src="./app.js?v=mesh-outline-wheel-20260423" type="module"></script>
 </body>
 </html>

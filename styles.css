@@ -2,6 +2,7 @@
   --bg-0: #07141f;
   --bg-1: #0c2335;
   --bg-2: #16354a;
+  --slice-shell-height: 260px;
   --slice-view-height: 260px;
   --slice-top-offset: 72px;
   --legend-bar-width: 16px;
@@ -363,6 +364,10 @@ output {
   overflow-wrap: anywhere;
 }
 
+#pickedText:empty {
+  display: none;
+}
+
 .metric-detail {
   margin-top: 12px;
   line-height: 1.55;
@@ -611,6 +616,10 @@ output {
   gap: 14px;
 }
 
+.grid.is-single-mesh {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .panel {
   margin: 0;
   padding: 14px;
@@ -675,15 +684,15 @@ output {
   border: 1px solid var(--line-strong);
   background:
     linear-gradient(180deg, rgba(5, 11, 18, 0.9), rgba(10, 20, 31, 0.96));
-  min-height: var(--slice-view-height);
+  min-height: var(--slice-shell-height);
 }
 
 .panel.is-mesh .slice-shell {
-  min-height: 260px;
+  min-height: clamp(440px, 58vh, 700px);
 }
 
 .panel.is-mesh canvas {
-  height: 260px;
+  height: clamp(440px, 58vh, 700px);
   image-rendering: auto;
   touch-action: none;
 }
@@ -749,7 +758,7 @@ output {
 
 .panel.is-mesh.is-awaiting-pick:not(.is-loading) canvas:hover + .slice-loader::before,
 .panel.is-mesh.is-awaiting-pick:not(.is-loading) canvas:focus-visible + .slice-loader::before {
-  content: "Left-drag to place a reference vertex";
+  content: "Click cortex to pick";
 }
 
 .slice-note {
@@ -772,6 +781,49 @@ output {
 
 .slice-note:not(:empty) {
   display: flex;
+}
+
+.panel.is-mesh .slice-note {
+  display: grid;
+  gap: 6px;
+  inset: auto 20px 20px 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: 0;
+}
+
+.mesh-picked-note,
+.mesh-help-note {
+  justify-self: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 21, 31, 0.82);
+  color: rgba(241, 248, 252, 0.94);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.mesh-picked-note {
+  display: none;
+  border-color: rgba(72, 215, 193, 0.38);
+  background: rgba(72, 215, 193, 0.12);
+  color: rgba(238, 255, 251, 0.96);
+  font-weight: 700;
+}
+
+.panel.is-mesh.has-picked-parcel .mesh-picked-note {
+  display: block;
+}
+
+.panel.is-mesh .slice-note:not(:empty) {
+  display: grid;
 }
 
 canvas {

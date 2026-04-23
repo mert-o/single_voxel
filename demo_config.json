@@ -10,8 +10,8 @@
   "datasets": [
     {
       "id": "healthy",
-      "name": "Healthy Reference Cohort",
-      "description": "Four 7T controls in shared reference space with multimodal voxel fingerprints.",
+      "name": "Healthy Homology",
+      "description": "Four 7T controls in shared reference space with multimodal voxel signatures.",
       "preprocessing_summary": "Healthy preprocessing: polynomial-detrended multispectral inputs, in-plane Gaussian smoothing (sigma = 1.0), per-subject standard scaling across voxels, contrast-family block weighting to prevent number of features dominating, and Lorentzian-fit to CEST spectra to remove baseline.",
       "smooth_sigma": 1.0,
       "t1_label": "T1 / MPRAGE · feature dim 343",
@@ -46,7 +46,8 @@
         { "id": "putamen", "label": "Putamen", "source": "aseg", "kind": "label", "labels": [12, 51] },
         { "id": "caudate", "label": "Caudate", "source": "aseg", "kind": "label", "labels": [11, 50] },
         { "id": "thalamus", "label": "Thalamus", "source": "aseg", "kind": "label", "labels": [10, 49] },
-        { "id": "pallidum", "label": "Pallidum", "source": "aseg", "kind": "label", "labels": [13, 52] }
+        { "id": "pallidum", "label": "Pallidum", "source": "aseg", "kind": "label", "labels": [13, 52] },
+        { "id": "cortical_ribbon", "label": "Cortical ribbon", "source": "cortical_ribbon", "kind": "nonzero" }
       ],
       "subjects": [
         {
@@ -57,7 +58,8 @@
           "t1_channel": 343,
           "rotate_k": 1,
           "region_sources": {
-            "aseg": "/home/m/HDD/nl_subjects/YHC_10_lncguay/aseg_resampled.nii.gz"
+            "aseg": "/home/m/HDD/nl_subjects/YHC_10_lncguay/aseg_resampled.nii.gz",
+            "cortical_ribbon": "/home/m/test_subj_folder/YHC_10_lncguay/mri/ribbon.mgz"
           }
         },
         {
@@ -68,7 +70,8 @@
           "t1_channel": 343,
           "rotate_k": 1,
           "region_sources": {
-            "aseg": "/home/m/HDD2/vox2/coregs/YHC_03_cyumllh_aseg_in_ref.nii.gz"
+            "aseg": "/home/m/HDD2/vox2/coregs/YHC_03_cyumllh_aseg_in_ref.nii.gz",
+            "cortical_ribbon": "/home/m/test_subj_folder/YHC_03_cyumllh/mri/ribbon.mgz"
           }
         },
         {
@@ -79,7 +82,8 @@
           "t1_channel": 343,
           "rotate_k": 1,
           "region_sources": {
-            "aseg": "/home/m/HDD2/vox2/coregs/OHC_17_mmixjcu_aseg_in_ref.nii.gz"
+            "aseg": "/home/m/HDD2/vox2/coregs/OHC_17_mmixjcu_aseg_in_ref.nii.gz",
+            "cortical_ribbon": "/home/m/test_subj_folder/OHC_17_mmixjcu/mri/ribbon.mgz"
           }
         },
         {
@@ -90,15 +94,16 @@
           "slice": 252,
           "rotate_k": 1,
           "region_sources": {
-            "aseg": "/home/m/HDD2/vox2/coregs/OHC_11_fxdvnzc_aseg_in_ref.nii.gz"
+            "aseg": "/home/m/HDD2/vox2/coregs/OHC_11_fxdvnzc_aseg_in_ref.nii.gz",
+            "cortical_ribbon": "/home/m/test_subj_folder/OHC_11_fxdvnzc/mri/ribbon.mgz"
           }
         }
       ]
     },
     {
       "id": "tumor",
-      "name": "Tumor CEST Cases",
-      "description": "Four tumor cases in reference space with smoothed, standardized CEST-normalized voxel fingerprints.",
+      "name": "Tumor Homology",
+      "description": "Four tumor cases in reference space with smoothed, standardized CEST-normalized voxel signatures.",
       "preprocessing_summary": "Tumor preprocessing: the 61-channel fitted / Lorentzian-fit to CEST spectra to remove baseline, in-plane Gaussian smoothing (sigma = 1.0) and per-subject standard scaling. No extra block weighting is applied in the demo.",
       "t1_label": "T1 structural",
       "default_display": {
