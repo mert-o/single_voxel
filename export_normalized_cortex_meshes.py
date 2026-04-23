@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-from nibabel.freesurfer.io import read_annot
+from nibabel.freesurfer.io import read_annot, read_geometry
 from scipy.spatial import cKDTree
 
 
@@ -26,10 +26,33 @@ SUBJECTS = [
 SOURCE_DIR = Path("/home/m/HDD2/vox2/cortical_sheet_tool")
 FREESURFER_DIR = Path("/home/m/test_subj_folder")
 OUT_DIR = Path(__file__).resolve().parent / "data" / "cortex"
-PARCELLATION = "destrieux"
-ANNOT_NAME = "aparc.a2009s"
+PARCELLATION = "desikan"
+ANNOT_NAME = "aparc"
 SAMPLE_COUNT = 8192
 RNG_SEED = 7
+
+
+def load_display_surface_coords(subject_id: str, hemi: str, fallback_coords: np.ndarray, expected_faces: np.ndarray) -> np.ndarray:
+    """Load inflated coordinates for rendering; fall back to NPZ coords if unavailable.
+
+    The sampled features remain tied to the same vertex ids. We only swap display
+    coordinates after confirming the inflated topology matches the NPZ mesh.
+    """
+    inflated_path = FREESURFER_DIR / subject_id / "surf" / f"{hemi}.inflated"
+    if not inflated_path.exists():
+        print(f"[warn] missing {inflated_path}; using coords from mesh archive")
+        return fallback_coords
+
+    inflated_coords, inflated_faces = read_geometry(str(inflated_path))
+    if inflated_faces.shape != expected_faces.shape or not np.array_equal(inflated_faces.astype(np.int32), expected_faces):
+        print(f"[warn] topology mismatch for {inflated_path}; using coords from mesh archive")
+        return fallback_coords
+
+    if inflated_coords.shape != fallback_coords.shape:
+        print(f"[warn] vertex count mismatch for {inflated_path}; using coords from mesh archive")
+        return fallback_coords
+
+    return inflated_coords.astype(np.float32)
 
 
 def annotation_lookup(subject_id: str, hemi: str) -> tuple[np.ndarray, list[str]]:
@@ -71,8 +94,8 @@ def remap_valid_mesh(
 
 def export_hemi(subject_id: str, hemi: str, mesh_npz: np.lib.npyio.NpzFile, parcel_names: dict[str, str]) -> dict:
     """Write one hemisphere's binary files and return its manifest entry."""
-    coords = mesh_npz[f"{hemi}_coords"]
     faces = mesh_npz[f"{hemi}_faces"].astype(np.int32)
+    coords = load_display_surface_coords(subject_id, hemi, mesh_npz[f"{hemi}_coords"], faces)
     labels = mesh_npz[f"{hemi}_parcellation"]
     counts = mesh_npz[f"{hemi}_voxel_count"]
     features = mesh_npz[f"{hemi}_vertex_features"]
@@ -122,15 +145,20 @@ def export_hemi(subject_id: str, hemi: str, mesh_npz: np.lib.npyio.NpzFile, parc
 def export_subject(subject_id: str, parcel_names: dict[str, str]) -> dict:
     """Export one subject manifest from the normalized mesh archive."""
     mesh_path = SOURCE_DIR / f"{subject_id}_{PARCELLATION}_cortical_mesh_ind.npz"
+    if not mesh_path.exists():
+        mesh_path = SOURCE_DIR / f"{subject_id}_cortical_mesh_ind.npz"
+    if not mesh_path.exists():
+        raise FileNotFoundError(f"Could not find cortical mesh archive for {subject_id} in {SOURCE_DIR}")
     with np.load(mesh_path, allow_pickle=False) as mesh_npz:
+        files = set(mesh_npz.files)
         feature_dim = int(mesh_npz["lh_vertex_features"].shape[1])
         manifest = {
             "subject_id": subject_id,
             "feature_dim": feature_dim,
-            "parcellation": str(mesh_npz["parcellation"]),
-            "annot_name": str(mesh_npz["annot_name"]),
-            "normalization_mode": str(mesh_npz["normalization_mode"]),
-            "block_weight_mode": str(mesh_npz["block_weight_mode"]),
+            "parcellation": str(mesh_npz["parcellation"]) if "parcellation" in files else PARCELLATION,
+            "annot_name": str(mesh_npz["annot_name"]) if "annot_name" in files else ANNOT_NAME,
+            "normalization_mode": str(mesh_npz["normalization_mode"]) if "normalization_mode" in files else "",
+            "block_weight_mode": str(mesh_npz["block_weight_mode"]) if "block_weight_mode" in files else "",
             "hemis": {},
         }
         for hemi in ["lh", "rh"]:
@@ -142,7 +170,7 @@ def export_subject(subject_id: str, parcel_names: dict[str, str]) -> dict:
 
 
 def update_metadata(parcel_names: dict[str, str]) -> None:
-    """Point the demo metadata at the refreshed Destrieux cortex dataset."""
+    """Point the demo metadata at the refreshed Desikan-Killiany cortex dataset."""
     metadata_path = Path(__file__).resolve().parent / "data" / "metadata.json"
     metadata = json.loads(metadata_path.read_text())
     metadata["default_dataset_id"] = "cortex"
@@ -161,7 +189,7 @@ def update_metadata(parcel_names: dict[str, str]) -> None:
         )
         dataset["delivery_summary"] = (
             "Web demo delivery: full inflated meshes are shown. Cortex outside the sampled ribbon slab is gray, "
-            "and sampled Destrieux parcels are colored. Each hemisphere stores 8192 feature anchors; "
+            "and sampled Desikan-Killiany parcels are colored. Each hemisphere stores 8192 feature anchors; "
             "similarity is painted back onto sampled cortex by nearest anchor."
         )
         dataset["interaction_hint"] = "Drag the 3D cortex to rotate it. Wheel to zoom. Click once to pick a cortical parcel."

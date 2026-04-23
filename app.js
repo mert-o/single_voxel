@@ -657,11 +657,97 @@ function isMeshDataset(dataset = getActiveDataset()) {
   return Boolean(dataset?.meta?.viewerKind === "mesh");
 }
 
+function formatParcelLabel(rawLabel) {
+  if (!rawLabel) {
+    return "";
+  }
+
+  const raw = String(rawLabel).trim();
+  const lowerRaw = raw.toLowerCase();
+  const desikanMap = {
+    unknown: "Unknown",
+    bankssts: "Banks of Superior Temporal Sulcus",
+    caudalanteriorcingulate: "Caudal Anterior Cingulate",
+    caudalmiddlefrontal: "Caudal Middle Frontal",
+    corpuscallosum: "Corpus Callosum",
+    cuneus: "Cuneus",
+    entorhinal: "Entorhinal Cortex",
+    fusiform: "Fusiform Gyrus",
+    inferiorparietal: "Inferior Parietal",
+    inferiortemporal: "Inferior Temporal",
+    isthmuscingulate: "Isthmus Cingulate",
+    lateraloccipital: "Lateral Occipital",
+    lateralorbitofrontal: "Lateral Orbitofrontal",
+    lingual: "Lingual Gyrus",
+    medialorbitofrontal: "Medial Orbitofrontal",
+    middletemporal: "Middle Temporal",
+    parahippocampal: "Parahippocampal Gyrus",
+    paracentral: "Paracentral",
+    parsopercularis: "Pars Opercularis",
+    parsorbitalis: "Pars Orbitalis",
+    parstriangularis: "Pars Triangularis",
+    pericalcarine: "Pericalcarine Cortex",
+    postcentral: "Postcentral Gyrus",
+    posteriorcingulate: "Posterior Cingulate",
+    precentral: "Precentral Gyrus",
+    precuneus: "Precuneus",
+    rostralanteriorcingulate: "Rostral Anterior Cingulate",
+    rostralmiddlefrontal: "Rostral Middle Frontal",
+    superiorfrontal: "Superior Frontal",
+    superiorparietal: "Superior Parietal",
+    superiortemporal: "Superior Temporal",
+    supramarginal: "Supramarginal Gyrus",
+    frontalpole: "Frontal Pole",
+    temporalpole: "Temporal Pole",
+    transversetemporal: "Transverse Temporal",
+    insula: "Insula",
+  };
+  if (desikanMap[lowerRaw]) {
+    return desikanMap[lowerRaw];
+  }
+
+  let text = raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!text) {
+    return "";
+  }
+
+  const tokenMap = {
+    G: "Gyrus",
+    S: "Sulcus",
+    inf: "Inferior",
+    sup: "Superior",
+    ant: "Anterior",
+    post: "Posterior",
+    lat: "Lateral",
+    med: "Medial",
+    temp: "Temporal",
+    front: "Frontal",
+    pariet: "Parietal",
+    transv: "Transverse",
+    opercular: "Opercular",
+    triangul: "Triangular",
+    fusifor: "Fusiform",
+    parahip: "Parahippocampal",
+  };
+
+  text = text
+    .split(" ")
+    .map((token) => {
+      const lower = token.toLowerCase();
+      const mapped = tokenMap[token] ?? tokenMap[lower] ?? token;
+      return mapped.replace(/\b\w/g, (ch) => ch.toUpperCase());
+    })
+    .join(" ");
+
+  return text;
+}
+
 function getParcelLabel(dataset, hemi, label) {
   if (!dataset?.meta?.parcelNames) {
     return label >= 0 ? `parcel ${label}` : "unlabeled";
   }
-  return dataset.meta.parcelNames[`${hemi}:${label}`] ?? `parcel ${label}`;
+  const raw = dataset.meta.parcelNames[`${hemi}:${label}`] ?? `parcel ${label}`;
+  return formatParcelLabel(raw);
 }
 
 function formatParcellationName(datasetMeta) {

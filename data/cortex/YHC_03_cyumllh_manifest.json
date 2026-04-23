@@ -1,10 +1,10 @@
 {
   "subject_id": "YHC_03_cyumllh",
   "feature_dim": 353,
-  "parcellation": "destrieux",
-  "annot_name": "aparc.a2009s",
+  "parcellation": "desikan",
+  "annot_name": "aparc",
   "normalization_mode": "standard",
-  "block_weight_mode": "dim",
+  "block_weight_mode": "",
   "hemis": {
     "lh": {
       "vertex_count": 142158,
