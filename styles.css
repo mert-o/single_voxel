@@ -590,6 +590,49 @@ output {
   margin-bottom: 14px;
 }
 
+.viewer-toolbar-side {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.cortex-view-switch {
+  display: inline-grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid rgba(72, 215, 193, 0.42);
+  border-radius: 999px;
+  background: rgba(7, 20, 31, 0.82);
+  box-shadow: 0 12px 32px rgba(72, 215, 193, 0.15);
+}
+
+.cortex-view-switch span {
+  padding: 0 8px 0 10px;
+  color: rgba(226, 239, 247, 0.82);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.cortex-view-switch button {
+  min-width: 92px;
+  padding: 10px 14px;
+  border: 1px solid rgba(161, 197, 216, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.cortex-view-switch button.is-active {
+  border-color: rgba(72, 215, 193, 0.72);
+  background: rgba(72, 215, 193, 0.22);
+  color: var(--ink);
+  box-shadow: 0 10px 28px rgba(72, 215, 193, 0.2);
+}
+
 .viewer-kicker {
   margin: 0 0 6px;
   color: rgba(199, 225, 237, 0.58);
@@ -614,6 +657,10 @@ output {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
+}
+
+.grid.is-cortex-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .grid.is-single-mesh {

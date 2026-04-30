@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./styles.css?v=mesh-outline-wheel-20260423" />
+  <link rel="stylesheet" href="./styles.css?v=cortex-ribbon-20260430" />
 </head>
 <body>
   <div class="page-shell">
@@ -39,7 +39,14 @@
             <p class="viewer-kicker">Cross-Subject Homology</p>
             <h2 id="viewerTitle">Homology Maps / Destrieux Parcellation</h2>
           </div>
-          <p id="selectionSummary"></p>
+          <div class="viewer-toolbar-side">
+            <div class="cortex-view-switch" id="cortexViewToggle" hidden>
+              <span>Cortex View</span>
+              <button id="cortexView2dBtn" type="button">2D ribbon</button>
+              <button id="cortexView3dBtn" type="button">3D mesh</button>
+            </div>
+            <p id="selectionSummary"></p>
+          </div>
         </div>
 
         <div class="viewer-top">
@@ -81,11 +88,6 @@
                   <input id="zoomSlider" type="range" min="100" max="280" step="5" value="100" />
                 </label>
                 <p class="detail-line">Current zoom <span id="zoomValue">1.0x</span></p>
-              </div>
-
-              <div class="control-stack" id="meshSubjectStack" hidden>
-                <label class="control-label">Displayed Subject</label>
-                <div class="chip-group" id="meshSubjectControls"></div>
               </div>
 
               <div class="control-stack">
@@ -166,6 +168,6 @@
     </article>
   </template>
 
-  <script src="./app.js?v=mesh-outline-wheel-20260423" type="module"></script>
+  <script src="./app.js?v=cortex-ribbon-20260430" type="module"></script>
 </body>
 </html>

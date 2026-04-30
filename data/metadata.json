@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "default_dataset_id": "cortex",
+  "default_dataset_id": "healthy",
   "datasets": [
     {
       "id": "healthy",
