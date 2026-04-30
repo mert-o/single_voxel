@@ -115,6 +115,7 @@
       "similarity_groups": {
         "CEST_norm": [0, 61]
       },
+      "strict_feature_dim": 61,
       "smooth_sigma": 1.0,
       "use_block_weights": false,
       "l2_normalize": false,
@@ -125,6 +126,8 @@
         {
           "name": "Tumor-551",
           "vol4d": "/home/m/HDD2/vox2/pats/551_fit.nii.gz",
+          "expected_vol4d_contains": ["551_fit"],
+          "forbidden_vol4d_contains": ["cest4d_in_ref"],
           "mask": "/home/m/HDD2/vox2/pats/551_Segment.nii.gz",
           "t1_path": "/home/m/HDD2/vox2/pats/551_7T_SlabSel_PRO_cCEST_11092023_Tumor_pat/nii/r2ndMeas_MID041001_t1_mprage_sag_post_REG_RefImage[1][all]spmbfc.nii",
           "slice": 8,
@@ -136,6 +139,8 @@
         {
           "name": "Tumor-656",
           "vol4d": "/home/m/HDD2/vox2/pats/656_7T_SlabSel_PRO_cCEST_29042024_Tumor_pat/coregs_ants/subj2_cestnorm_in_ref.nii.gz",
+          "expected_vol4d_contains": ["cestnorm_in_ref"],
+          "forbidden_vol4d_contains": ["cest4d_in_ref"],
           "mask": "/home/m/HDD2/vox2/pats/656_7T_SlabSel_PRO_cCEST_29042024_Tumor_pat/coregs_ants/subj2_seg5_in_ref.nii.gz",
           "t1_path": "/home/m/HDD2/vox2/pats/656_7T_SlabSel_PRO_cCEST_29042024_Tumor_pat/coregs_ants/subj2_T1_in_ref.nii.gz",
           "slice": 8,
@@ -147,6 +152,8 @@
         {
           "name": "Tumor-657",
           "vol4d": "/home/m/HDD2/vox2/pats/657_7T_SlabSel_PRO_cCEST_29042024_Tumor_pat/coregs_ants/subj3_cestnorm_in_ref.nii.gz",
+          "expected_vol4d_contains": ["cestnorm_in_ref"],
+          "forbidden_vol4d_contains": ["cest4d_in_ref"],
           "mask": "/home/m/HDD2/vox2/pats/657_7T_SlabSel_PRO_cCEST_29042024_Tumor_pat/coregs_ants/subj3_seg5_in_ref.nii.gz",
           "t1_path": "/home/m/HDD2/vox2/pats/657_7T_SlabSel_PRO_cCEST_29042024_Tumor_pat/coregs_ants/subj3_T1_in_ref.nii.gz",
           "slice": 8,
@@ -158,6 +165,8 @@
         {
           "name": "Tumor-789",
           "vol4d": "/home/m/HDD2/vox2/pats/789_7T_SlabSel_cCEST_04102024_Tumor_pat/coregs_ants/subj4_cestnorm_in_ref.nii.gz",
+          "expected_vol4d_contains": ["cestnorm_in_ref"],
+          "forbidden_vol4d_contains": ["cest4d_in_ref"],
           "mask": "/home/m/HDD2/vox2/pats/789_7T_SlabSel_cCEST_04102024_Tumor_pat/coregs_ants/subj4_seg5_in_ref.nii.gz",
           "t1_path": "/home/m/HDD2/vox2/pats/789_7T_SlabSel_cCEST_04102024_Tumor_pat/coregs_ants/subj4_T1_in_ref.nii.gz",
           "slice": 8,
