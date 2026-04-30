@@ -1012,10 +1012,10 @@ function drawCortexRibbonImage(ctx, subject, visible, ribbonInfo) {
     if (!ribbonInfo.mask[i]) {
       continue;
     }
-    const [r, g, b] = colorMapViridis(visible[i] / 255);
-    image.data[base + 0] = r;
-    image.data[base + 1] = g;
-    image.data[base + 2] = b;
+    const gray = visible[i];
+    image.data[base + 0] = gray;
+    image.data[base + 1] = gray;
+    image.data[base + 2] = gray;
   }
   ctx.putImageData(image, 0, 0);
 }
@@ -1611,11 +1611,9 @@ function renderPanel(panel, similarityEntry) {
   const focusInfo = getActiveMaskInfo(subject);
   const cortexRibbonView = isCortexSliceMode(dataset);
   const displayOption = getDisplayOption(dataset.meta);
-  const visible = getSubjectDisplayImage(
-    subject,
-    displayOption,
-    cortexRibbonView ? { mask: focusInfo.mask, cacheSuffix: ":ribbon", backgroundGray: 0 } : {}
-  );
+  const visible = cortexRibbonView
+    ? subject.displayCache.get("t1")
+    : getSubjectDisplayImage(subject, displayOption);
   const isRegionMode = !cortexRibbonView && Boolean(state.activeRegionId);
   const isCorticalRibbonMode = state.activeRegionId === "cortical_ribbon";
   const isReference =
@@ -1694,7 +1692,7 @@ function renderPanel(panel, similarityEntry) {
   } else if (similarityEntry?.stats) {
     panel.badge.textContent = `Mean ${similarityEntry.stats.mean.toFixed(2)}`;
   } else if (cortexRibbonView) {
-    panel.badge.textContent = "Ribbon";
+    panel.badge.textContent = "T1 ribbon";
   } else if (displayOption.kind === "feature" && subject.featuresReady) {
     panel.badge.textContent = "Contrast view";
   } else {
@@ -2271,7 +2269,7 @@ function updateStats() {
   deliveryText.hidden = !deliverySummary;
 
   const isMesh = meshMode;
-  contrastControlStack.hidden = isMesh;
+  contrastControlStack.hidden = isMesh || cortexMode;
   zoomControlStack.hidden = isMesh;
   regionStripCard.hidden = isMesh || dataset.meta.regions.length === 0 || cortexMode;
   similarityStripCard.hidden = dataset.meta.similarityGroups.length === 0;
