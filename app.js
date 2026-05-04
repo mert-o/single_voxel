@@ -536,20 +536,40 @@ async function loadSubjectPreview(datasetMeta, subjectMeta, baseDir) {
   return subject;
 }
 
-async function loadCortexSliceSubjectPreview(healthyMeta, healthySubjectMeta, cortexSubjectMeta, baseDir) {
-  const ribbonFile = healthySubjectMeta.region_files?.cortical_ribbon;
-  if (!ribbonFile) {
-    throw new Error(`Missing cortical ribbon mask for ${healthySubjectMeta.name ?? cortexSubjectMeta.name}`);
-  }
-  const ribbonSubjectMeta = {
-    ...healthySubjectMeta,
-    region_files: {
-      cortical_ribbon: ribbonFile,
-    },
+async function loadCortexAxialSubjectPreview(subjectMeta, baseDir) {
+  const manifestUrl = joinUrl(baseDir, subjectMeta.axial_manifest_file);
+  const manifestDir = dirnameUrl(manifestUrl);
+  const manifest = await loadJson(manifestUrl);
+  const pixelCount = manifest.width * manifest.height;
+  const [baseImage, mask, hemiMap, labelMap, sampleMap] = await Promise.all([
+    loadTypedArray(joinUrl(manifestDir, manifest.files.base), "uint8", pixelCount),
+    loadTypedArray(joinUrl(manifestDir, manifest.files.mask), "uint8", pixelCount),
+    loadTypedArray(joinUrl(manifestDir, manifest.files.hemi), "uint8", pixelCount),
+    loadTypedArray(joinUrl(manifestDir, manifest.files.label), "uint8", pixelCount),
+    loadTypedArray(joinUrl(manifestDir, manifest.files.sample), "uint16", pixelCount),
+  ]);
+  const maskInfo = buildMaskInfo(mask, manifest.width, manifest.height);
+  const subject = {
+    name: subjectMeta.name,
+    slice: manifest.slice,
+    width: manifest.width,
+    height: manifest.height,
+    k: 0,
+    pixelCount,
+    t1f: null,
+    mask,
+    maskInfo,
+    emptyMaskInfo: buildMaskInfo(new Uint8Array(pixelCount), manifest.width, manifest.height),
+    displayCache: new Map(),
+    regions: { cortical_ribbon: maskInfo },
+    features: null,
+    norms: null,
+    featuresReady: true,
+    hemiMap,
+    labelMap,
+    sampleMap,
   };
-  const subject = await loadSubjectPreview(healthyMeta, ribbonSubjectMeta, baseDir);
-  subject.name = cortexSubjectMeta.name ?? subject.name;
-  subject.featureFile = healthySubjectMeta.feature_file;
+  subject.displayCache.set("t1", baseImage);
   return subject;
 }
 
@@ -633,28 +653,15 @@ async function ensureMeshLib() {
 
 async function createDataset(datasetMeta, baseDir) {
   if (datasetMeta.viewerKind === "mesh") {
-    const healthyMeta = state.meta.datasets.find((item) => item.id === "healthy");
-    if (!healthyMeta) {
-      throw new Error("Healthy dataset is required for cortex 2D mode.");
-    }
-    if (healthyMeta.subjects.length < datasetMeta.subjects.length) {
-      throw new Error("Healthy dataset has fewer subjects than cortex dataset.");
-    }
-
     let loadedCount = 0;
     const total = datasetMeta.subjects.length;
-    statusText.textContent = `Loading cortical meshes and 2D slices (0/${total})`;
+    statusText.textContent = `Loading cortical meshes and axial columns (0/${total})`;
     const subjects = await Promise.all(
-      datasetMeta.subjects.map(async (subjectMeta, idx) => {
+      datasetMeta.subjects.map(async (subjectMeta) => {
         const subject = await loadCortexSubjectPreview(datasetMeta, subjectMeta, baseDir);
-        subject.sliceSubject = await loadCortexSliceSubjectPreview(
-          healthyMeta,
-          healthyMeta.subjects[idx],
-          subjectMeta,
-          baseDir
-        );
+        subject.sliceSubject = await loadCortexAxialSubjectPreview(subjectMeta, baseDir);
         loadedCount += 1;
-        statusText.textContent = `Loading cortical meshes and 2D slices (${loadedCount}/${total})`;
+        statusText.textContent = `Loading cortical meshes and axial columns (${loadedCount}/${total})`;
         return subject;
       })
     );
@@ -1020,6 +1027,35 @@ function drawCortexRibbonImage(ctx, subject, visible, ribbonInfo) {
   ctx.putImageData(image, 0, 0);
 }
 
+function drawCortexParcelOverlay(ctx, subject, similarityEntry, alpha) {
+  if (!similarityEntry) {
+    return;
+  }
+  const image = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+  for (let i = 0; i < subject.pixelCount; i++) {
+    if (!subject.mask[i]) {
+      continue;
+    }
+    const hemiCode = subject.hemiMap[i];
+    const sampleIdx = subject.sampleMap[i];
+    if (!hemiCode || sampleIdx === 65535) {
+      continue;
+    }
+    const hemi = hemiCode === 1 ? "lh" : "rh";
+    const sims = similarityEntry.hemis?.[hemi]?.sims;
+    if (!sims?.length || sampleIdx >= sims.length) {
+      continue;
+    }
+    const [r, g, b] = colorMapViridis(clamp01(sims[sampleIdx]));
+    const base = i * 4;
+    image.data[base + 0] = Math.round(image.data[base + 0] * (1 - alpha) + r * alpha);
+    image.data[base + 1] = Math.round(image.data[base + 1] * (1 - alpha) + g * alpha);
+    image.data[base + 2] = Math.round(image.data[base + 2] * (1 - alpha) + b * alpha);
+    image.data[base + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+}
+
 function getActiveGroupIds() {
   return Array.from(state.activeSimilarityGroups).sort();
 }
@@ -1156,12 +1192,12 @@ function meshPickedText() {
 function buildMeshReferenceVector(subject, hemi, sampleIndex, channelIndices) {
   const hemiData = subject.hemis[hemi];
   const ref = new Float32Array(channelIndices.length);
+  const featureDim = state.meta.datasets.find((item) => item.id === state.datasetId).featureDim;
+  const base = sampleIndex * featureDim;
   let norm2 = 0;
-  const base = sampleIndex * state.meta.datasets.find((item) => item.id === state.datasetId).featureDim;
   for (let i = 0; i < channelIndices.length; i++) {
-    const value = hemiData.sampleFeatures[base + channelIndices[i]];
-    ref[i] = value;
-    norm2 += value * value;
+    ref[i] = hemiData.sampleFeatures[base + channelIndices[i]];
+    norm2 += ref[i] * ref[i];
   }
   const norm = Math.sqrt(norm2);
   if (norm < 1e-8) {
@@ -1257,7 +1293,8 @@ function syncMeshMarker(panel) {
     state.selected &&
     state.selected.datasetId === state.datasetId &&
     state.selected.subjectIndex === panel.idx &&
-    state.selected.kind === "mesh";
+    state.selected.kind === "mesh" &&
+    state.selected.fullVertexIndex >= 0;
   if (!isReference) {
     marker.visible = false;
     return;
@@ -1514,10 +1551,9 @@ function ensureSimilarityCache() {
   const cacheKey = {
     datasetId: state.datasetId,
     subjectIndex: state.selected.subjectIndex,
-    selectionKey:
-      state.selected.kind === "mesh"
-        ? `${state.selected.hemi}:${state.selected.sampleIndex}`
-        : `${state.selected.x}:${state.selected.y}`,
+    selectionKey: state.selected.kind === "mesh"
+      ? `${state.selected.hemi}:${state.selected.sampleIndex}`
+      : `${state.selected.x}:${state.selected.y}`,
     regionId: state.activeRegionId,
     groupKey: activeGroupKey(),
   };
@@ -1539,19 +1575,20 @@ function ensureSimilarityCache() {
     return null;
   }
 
-  if (isCortexMeshMode(dataset)) {
+  if (isCortexDataset(dataset)) {
     const refSubject = dataset.subjects[state.selected.subjectIndex];
     const refVec = buildMeshReferenceVector(refSubject, state.selected.hemi, state.selected.sampleIndex, channelIndices);
     if (!refVec) {
-      statusText.textContent = "Reference vector is empty at this vertex.";
+      statusText.textContent = "Reference vector is empty at this cortical sample.";
       return null;
     }
 
     const perPanel = dataset.subjects.map((subject) => {
       const perHemi = {};
       for (const hemi of ["lh", "rh"]) {
+        const sims = cosineMeshSamples(subject.hemis[hemi], refVec, channelIndices, dataset.meta.featureDim);
         perHemi[hemi] = {
-          sims: cosineMeshSamples(subject.hemis[hemi], refVec, channelIndices, dataset.meta.featureDim),
+          sims,
         };
       }
       return {
@@ -1564,10 +1601,7 @@ function ensureSimilarityCache() {
     statusText.textContent = "Cortical similarity maps ready.";
     return state.similarityCache;
   }
-
-  const sliceSubjects = isCortexSliceMode(dataset)
-    ? dataset.subjects.map((subject) => subject.sliceSubject)
-    : dataset.subjects;
+  const sliceSubjects = dataset.subjects;
   const refSubject = sliceSubjects[state.selected.subjectIndex];
   const refFlat = state.selected.y * refSubject.width + state.selected.x;
   const activeRefMask = getActiveMaskInfo(refSubject);
@@ -1642,6 +1676,8 @@ function renderPanel(panel, similarityEntry) {
 
   if (similarityEntry?.sims?.length) {
     drawOverlay(bufferCtx, similarityEntry.pixelInfo.pixels, similarityEntry.sims, state.alpha);
+  } else if (cortexRibbonView && similarityEntry?.hemis) {
+    drawCortexParcelOverlay(bufferCtx, subject, similarityEntry, state.alpha);
   }
   if (isRegionMode && isCorticalRibbonMode && focusInfo.pixels.length) {
     drawRegionFill(bufferCtx, focusInfo);
@@ -1977,6 +2013,8 @@ async function buildPanels(dataset) {
     canvas.title =
       isCortexMeshMode(dataset)
         ? "Drag to rotate. Wheel to zoom. Click cortex to pick."
+        : isCortexSliceMode(dataset)
+        ? "Click a cortical-ribbon voxel to pick."
         : "Drag to scrub a reference voxel";
 
     const panel = {
@@ -2062,6 +2100,33 @@ function pickSliceReference(panel, coords) {
     return false;
   }
 
+  if (isCortexSliceMode(dataset)) {
+    const hemiCode = panel.subject.hemiMap[flat];
+    const sampleIndex = panel.subject.sampleMap[flat];
+    const label = panel.subject.labelMap[flat];
+    if (!hemiCode || sampleIndex === 65535) {
+      return false;
+    }
+    const hemi = hemiCode === 1 ? "lh" : "rh";
+    state.selected = {
+      datasetId: state.datasetId,
+      subjectIndex: panel.idx,
+      kind: "mesh",
+      hemi,
+      label,
+      sampleIndex,
+      fullVertexIndex: -1,
+      x: coords.x,
+      y: coords.y,
+    };
+    state.meshPickedLabel = getMeshSelectionText(dataset, hemi, label);
+    invalidateSimilarityCache();
+    pickedText.textContent = `${subjectLabel(panel.idx)} · ${hemi.toUpperCase()} ${getParcelLabel(dataset, hemi, label)} · x=${coords.x}, y=${coords.y}`;
+    statusText.textContent = "Computing cortical similarity maps...";
+    renderPanels();
+    return true;
+  }
+
   state.selected = {
     datasetId: state.datasetId,
     subjectIndex: panel.idx,
@@ -2085,6 +2150,8 @@ function clearSelection(statusOverride = null) {
   invalidateSimilarityCache();
   pickedText.textContent = isCortexMeshMode()
     ? ""
+    : isCortexSliceMode()
+    ? "No reference voxel selected. Click the cortical ribbon or switch to 3D."
     : "No reference voxel selected. Drag or click a slice to project voxel homology across subjects.";
   if (statusOverride) {
     statusText.textContent = statusOverride;
@@ -2396,6 +2463,8 @@ async function setCortexViewMode(nextMode) {
       ? loadingStatusText(dataset)
       : isCortexMeshMode(dataset)
       ? "Drag the cortex to rotate it. Click one cortical parcel to choose a reference."
+      : isCortexSliceMode(dataset)
+      ? "Click one cortical-ribbon voxel to choose a cortical reference."
       : "Drag any subject panel to choose a reference voxel.";
 }
 
@@ -2494,26 +2563,6 @@ async function loadFeaturesIntoSubject(dataset, idx, baseDir) {
         );
       })
     );
-    const sliceSubject = subject.sliceSubject;
-    const featureLength = sliceSubject.pixelCount * dataset.meta.featureDim;
-    const features = await loadTypedArray(
-      joinUrl(baseDir, sliceSubject.featureFile),
-      dataset.meta.dtype.feature,
-      featureLength
-    );
-    const norms = new Float32Array(sliceSubject.pixelCount);
-    for (let flat = 0; flat < sliceSubject.pixelCount; flat++) {
-      let norm2 = 0;
-      const base = flat * sliceSubject.k;
-      for (let j = 0; j < sliceSubject.k; j++) {
-        const value = features[base + j];
-        norm2 += value * value;
-      }
-      norms[flat] = Math.sqrt(norm2);
-    }
-    sliceSubject.features = features;
-    sliceSubject.norms = norms;
-    sliceSubject.featuresReady = true;
     subject.featuresReady = true;
     return;
   }
@@ -2576,6 +2625,8 @@ function startFeatureLoading(dataset) {
             statusText.textContent =
               isCortexMeshMode(dataset)
                 ? "Drag the cortex to rotate it. Click one cortical parcel to choose a reference."
+                : isCortexSliceMode(dataset)
+                ? "Click one cortical-ribbon voxel to choose a cortical reference."
                 : "Drag any subject panel to choose a reference voxel.";
           }
         }
@@ -2608,6 +2659,8 @@ function resetForDataset(dataset) {
   pickedText.textContent =
     isCortexMeshMode(dataset)
       ? ""
+      : isCortexSliceMode(dataset)
+      ? "No reference voxel selected. Click the cortical ribbon or switch to 3D."
       : "No reference voxel selected. Drag or click a slice to project voxel homology across subjects.";
 }
 
@@ -2653,6 +2706,8 @@ async function activateDataset(datasetId) {
     statusText.textContent =
       isCortexMeshMode(dataset)
         ? "Drag the cortex to rotate it. Click one cortical parcel to choose a reference."
+        : isCortexSliceMode(dataset)
+        ? "Click one cortical-ribbon voxel to choose a cortical reference."
         : "Drag any subject panel to choose a reference voxel.";
   }
 }

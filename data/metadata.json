@@ -340,8 +340,8 @@
       "name": "Cortical Homology",
       "description": "Four subject-native inflated cortical meshes with volume-normalized, block-weighted ribbon signatures.",
       "viewer_kind": "mesh",
-      "width": 0,
-      "height": 0,
+      "width": 256,
+      "height": 336,
       "feature_dim": 353,
       "parcellation": "desikan",
       "annot_name": "aparc",
@@ -672,19 +672,23 @@
       "subjects": [
         {
           "name": "YHC_10_lncguay",
-          "mesh_manifest_file": "cortex/YHC_10_lncguay_manifest.json"
+          "mesh_manifest_file": "cortex/YHC_10_lncguay_manifest.json",
+          "axial_manifest_file": "cortex/YHC_10_lncguay_axial_manifest.json"
         },
         {
           "name": "YHC_03_cyumllh",
-          "mesh_manifest_file": "cortex/YHC_03_cyumllh_manifest.json"
+          "mesh_manifest_file": "cortex/YHC_03_cyumllh_manifest.json",
+          "axial_manifest_file": "cortex/YHC_03_cyumllh_axial_manifest.json"
         },
         {
           "name": "OHC_17_mmixjcu",
-          "mesh_manifest_file": "cortex/OHC_17_mmixjcu_manifest.json"
+          "mesh_manifest_file": "cortex/OHC_17_mmixjcu_manifest.json",
+          "axial_manifest_file": "cortex/OHC_17_mmixjcu_axial_manifest.json"
         },
         {
           "name": "OHC_11_fxdvnzc",
-          "mesh_manifest_file": "cortex/OHC_11_fxdvnzc_manifest.json"
+          "mesh_manifest_file": "cortex/OHC_11_fxdvnzc_manifest.json",
+          "axial_manifest_file": "cortex/OHC_11_fxdvnzc_axial_manifest.json"
         }
       ]
     },

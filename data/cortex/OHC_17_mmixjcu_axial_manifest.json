@@ -1,0 +1,13 @@
+{
+  "subject_id": "OHC_17_mmixjcu",
+  "width": 256,
+  "height": 336,
+  "slice": 253,
+  "files": {
+    "base": "OHC_17_mmixjcu_axial_base.u8",
+    "mask": "OHC_17_mmixjcu_axial_mask.u8",
+    "hemi": "OHC_17_mmixjcu_axial_hemi.u8",
+    "label": "OHC_17_mmixjcu_axial_label.u8",
+    "sample": "OHC_17_mmixjcu_axial_sample.u16"
+  }
+}

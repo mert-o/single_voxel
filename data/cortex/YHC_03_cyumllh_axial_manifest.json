@@ -1,0 +1,13 @@
+{
+  "subject_id": "YHC_03_cyumllh",
+  "width": 256,
+  "height": 336,
+  "slice": 259,
+  "files": {
+    "base": "YHC_03_cyumllh_axial_base.u8",
+    "mask": "YHC_03_cyumllh_axial_mask.u8",
+    "hemi": "YHC_03_cyumllh_axial_hemi.u8",
+    "label": "YHC_03_cyumllh_axial_label.u8",
+    "sample": "YHC_03_cyumllh_axial_sample.u16"
+  }
+}

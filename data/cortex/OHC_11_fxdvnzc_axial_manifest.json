@@ -1,0 +1,13 @@
+{
+  "subject_id": "OHC_11_fxdvnzc",
+  "width": 256,
+  "height": 336,
+  "slice": 252,
+  "files": {
+    "base": "OHC_11_fxdvnzc_axial_base.u8",
+    "mask": "OHC_11_fxdvnzc_axial_mask.u8",
+    "hemi": "OHC_11_fxdvnzc_axial_hemi.u8",
+    "label": "OHC_11_fxdvnzc_axial_label.u8",
+    "sample": "OHC_11_fxdvnzc_axial_sample.u16"
+  }
+}
